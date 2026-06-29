@@ -98,6 +98,23 @@ def parse_insights(raw_text: str) -> list[dict[str, Any]]:
     return []
 
 
+def dedup_candidates(candidates: list[Candidate]) -> list[Candidate]:
+    """
+    Drop candidates whose node set is identical to one already kept (different
+    anchors often pull the same cluster). Keeps the first occurrence, so the
+    earlier generator wins. Saves redundant Claude calls.
+    """
+    seen: set[frozenset[str]] = set()
+    out: list[Candidate] = []
+    for c in candidates:
+        key = frozenset(c.node_ids)
+        if key in seen:
+            continue
+        seen.add(key)
+        out.append(c)
+    return out
+
+
 def derive_title(insight: dict[str, Any]) -> str:
     """Use an explicit title if the model gave one, else the first sentence."""
     if insight.get("title"):
@@ -123,22 +140,29 @@ async def _gather_subgraph(conn: Any, node_ids: list[str]) -> tuple[list[dict], 
     return [dict(n) for n in nodes], [dict(e) for e in edges]
 
 
+# Anchor types for spatial-temporal clustering: things that *happen* at a place
+# and time (not static infrastructure like POIs/stops). Construction + every
+# kind of Event (police incident, road closure, transit disruption, precinct).
+_ANCHOR_TYPES = ("ConstructionSite", "Event")
+
+
 async def spatial_temporal_candidates(
     radius_m: float = 150.0,
     window_days: int = 30,
     limit: int = 50,
+    anchor_types: tuple[str, ...] = _ANCHOR_TYPES,
 ) -> list[Candidate]:
-    """ConstructionSite anchors + geo nodes nearby and overlapping in time."""
+    """Anchor on event-like geo nodes + others nearby and overlapping in time."""
     out: list[Candidate] = []
     async with _get_conn() as conn:
         anchors = await conn.fetch(
             """
             SELECT id, valid_from, valid_to FROM nodes
-            WHERE node_type = 'ConstructionSite' AND geom IS NOT NULL
+            WHERE node_type = ANY($2::text[]) AND geom IS NOT NULL
               AND valid_to IS NULL
             ORDER BY observed_at DESC LIMIT $1
             """,
-            limit,
+            limit, list(anchor_types),
         )
         for a in anchors:
             rows = await conn.fetch(
@@ -333,12 +357,12 @@ async def scan(insight_types: tuple[str, ...] = ("inefficiency", "synergy")) -> 
     if not settings.anthropic_api_key:
         raise RuntimeError("ANTHROPIC_API_KEY not configured — cannot run insight scan")
 
-    candidates = (
+    candidates = dedup_candidates(
         await spatial_temporal_candidates()
         + await area_bridge_candidates()
         + await ego_network_candidates()
     )
-    logger.info("insight scan: %d candidate subgraphs", len(candidates))
+    logger.info("insight scan: %d candidate subgraphs (deduped)", len(candidates))
 
     client = _build_client()
     counts = {"candidates": len(candidates), "written": 0}

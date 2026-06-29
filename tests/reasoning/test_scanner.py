@@ -1,6 +1,12 @@
 """Unit tests for the pure scanner helpers (no DB, no Claude)."""
 
-from reasoning.scanner import candidate_key, derive_title, parse_insights
+from reasoning.scanner import (
+    Candidate,
+    candidate_key,
+    dedup_candidates,
+    derive_title,
+    parse_insights,
+)
 
 
 # ── candidate_key ────────────────────────────────────────────────────────────
@@ -53,6 +59,26 @@ def test_parse_insights_drops_non_dicts() -> None:
     raw = '{"insights": ["bad", {"description": "good"}]}'
     out = parse_insights(raw)
     assert out == [{"description": "good"}]
+
+
+# ── dedup_candidates ─────────────────────────────────────────────────────────
+
+def test_dedup_same_node_set_order_independent() -> None:
+    a = Candidate("spatial_temporal", ["n1", "n2", "n3"], "n1")
+    b = Candidate("ego_network", ["n3", "n2", "n1"], "n3")  # same set, diff order
+    out = dedup_candidates([a, b])
+    assert len(out) == 1
+    assert out[0].generator == "spatial_temporal"  # first kept
+
+
+def test_dedup_keeps_distinct() -> None:
+    a = Candidate("g", ["n1", "n2"], "n1")
+    b = Candidate("g", ["n3", "n4"], "n3")
+    assert len(dedup_candidates([a, b])) == 2
+
+
+def test_dedup_empty() -> None:
+    assert dedup_candidates([]) == []
 
 
 # ── derive_title ─────────────────────────────────────────────────────────────
