@@ -22,6 +22,9 @@ Rules:
 - Return structured JSON: a list of insights, each with type, description, evidence (node/edge IDs),
   confidence (0-1), and a reasoning_trace.
 - confidence < 0.7: do not return.
+- Language: write every human-readable field (title, description, reasoning_trace)
+  in GERMAN. Keep the JSON keys and the "type" value (inefficiency/synergy) in
+  English; node/edge IDs stay verbatim.
 - Respond only with valid JSON. No prose outside the JSON object.
 """
 
