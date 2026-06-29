@@ -57,9 +57,55 @@ async def verify() -> bool:
     return ok
 
 
+async def _run_all() -> None:
+    """
+    Run connectors in dependency order, isolating failures so one bad source
+    doesn't halt the rest. Geo spine first (everything snaps to it), then the
+    data layers, then resolution. The heaviest feeds (gtfs_static ~144MB, the
+    insight scan which needs ANTHROPIC_API_KEY) are left out of --all; run them
+    on their own when wanted.
+    """
+    from ingestion import flows
+
+    sequence = [
+        ("geo_spine", flows.run_geo_spine),
+        ("strassen", flows.run_strassen),
+        ("strassenabschnitte", flows.run_strassenabschnitte),
+        ("ods_pois", flows.run_ods_pois),
+        ("ods_stats", flows.run_ods_stats),
+        ("baustellen", flows.run_baustellen),
+        ("brightsky", flows.run_brightsky),
+        ("lanuv_air", flows.run_lanuv_air),
+        ("polizei_rss", flows.run_polizei_rss),
+        ("vergabe_nrw", flows.run_vergabe_nrw),
+        ("wahlergebnisse", flows.run_wahlergebnisse),
+        ("wahlergebnisse_stimmbezirk", flows.run_wahlergebnisse_stimmbezirk),
+        ("dortmund_events", flows.run_dortmund_events),
+        ("autobahn", flows.run_autobahn),
+        ("gtfs_realtime", flows.run_gtfs_realtime),
+        ("overpass", flows.run_overpass),
+        ("gremientermine", flows.run_gremientermine),
+        ("gremienniederschriften", flows.run_gremienniederschriften),
+        ("text_linking", flows.run_text_linking),
+    ]
+    results: list[tuple[str, str]] = []
+    for name, fn in sequence:
+        print(f"\n→ {name} …")
+        try:
+            await fn()
+            results.append((name, "ok"))
+        except Exception as exc:  # noqa: BLE001 — isolate per connector
+            print(f"  ✗ {name}: {exc}", file=sys.stderr)
+            results.append((name, f"FAILED: {str(exc)[:120]}"))
+    print("\n── ingest summary ──")
+    for name, status in results:
+        print(f"  {'✓' if status == 'ok' else '✗'} {name:28} {status}")
+
+
 async def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--ingest", action="store_true", help="run geo_spine after migrating")
+    parser.add_argument("--all", action="store_true", help="run all connectors in order")
     args = parser.parse_args()
 
     try:
@@ -69,7 +115,9 @@ async def main() -> int:
             print("\nSchema incomplete — check that extensions are enabled "
                   "(Supabase: Database → Extensions).", file=sys.stderr)
             return 1
-        if args.ingest:
+        if args.all:
+            await _run_all()
+        elif args.ingest:
             print("\n→ running geo spine …")
             from ingestion.flows import run_geo_spine
 
