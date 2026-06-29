@@ -25,13 +25,18 @@ logger = logging.getLogger(__name__)
 
 OVERPASS_URL = settings.overpass_api_url
 
-# Dortmund admin boundary relation ID
-DORTMUND_RELATION = 62571
+# Dortmund admin boundary relation ID (OSM relation 1829065, admin_level 6,
+# wikidata Q1295). NB: 62571 is Landkreis Oberspreewald-Lausitz — wrong city.
+DORTMUND_RELATION = 1829065
+# Overpass area id for a relation = 3600000000 + relation_id. NOT a "3600"
+# string prefix — that drops the zero-padding (→ 360062571), a nonexistent area
+# that returns 0 elements with no error.
+DORTMUND_AREA_ID = 3600000000 + DORTMUND_RELATION
 
 # Overpass QL query — nodes and ways with business/POI tags inside Dortmund
 OVERPASS_QUERY = f"""
 [out:json][timeout:120];
-area(3600{DORTMUND_RELATION})->.dortmund;
+area({DORTMUND_AREA_ID})->.dortmund;
 (
   node["shop"](area.dortmund);
   node["amenity"](area.dortmund);

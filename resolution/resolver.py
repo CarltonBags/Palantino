@@ -78,8 +78,8 @@ class EntityResolver:
                 confidence = max(0.0, 1.0 - dist / distance_m) * 0.9 + 0.1
                 await self._handle_candidate(
                     ResolutionCandidate(
-                        node_a_id=UUID(row["a_id"]),
-                        node_b_id=UUID(row["b_id"]),
+                        node_a_id=UUID(str(row["a_id"])),
+                        node_b_id=UUID(str(row["b_id"])),
                         method="geo_name",
                         confidence=round(confidence, 3),
                     )
@@ -119,8 +119,8 @@ class EntityResolver:
             for row in rows:
                 await self._handle_candidate(
                     ResolutionCandidate(
-                        node_a_id=UUID(row["a_id"]),
-                        node_b_id=UUID(row["b_id"]),
+                        node_a_id=UUID(str(row["a_id"])),
+                        node_b_id=UUID(str(row["b_id"])),
                         method="name_fuzzy_trgm",
                         confidence=round(float(row["sim"]), 3),
                     )

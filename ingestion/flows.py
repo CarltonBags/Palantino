@@ -311,8 +311,8 @@ async def _locate_pois_in_geo_areas(poi_nodes: list) -> int:
         )
         for row in rows:
             edge = located_in_edge(
-                from_node_id=UUID(row["poi_id"]),
-                to_node_id=UUID(row["geo_id"]),
+                from_node_id=UUID(str(row["poi_id"])),
+                to_node_id=UUID(str(row["geo_id"])),
                 source="osm_overpass",
                 observed_at=datetime.utcnow(),
             )
@@ -575,8 +575,8 @@ async def _locate_nodes_in_geo_areas(
         )
         for row in rows:
             edge = located_in_edge(
-                from_node_id=UUID(row["child_id"]),
-                to_node_id=UUID(row["geo_id"]),
+                from_node_id=UUID(str(row["child_id"])),
+                to_node_id=UUID(str(row["geo_id"])),
                 source=source,
                 observed_at=datetime.now(timezone.utc),
             )
@@ -635,8 +635,8 @@ async def _link_roads_to_bezirke(source: str) -> int:
         )
         for row in rows:
             edge = part_of(
-                child_id=UUID(row["road_id"]),
-                parent_id=UUID(row["geo_id"]),
+                child_id=UUID(str(row["road_id"])),
+                parent_id=UUID(str(row["geo_id"])),
                 source=source,
                 observed_at=datetime.now(timezone.utc),
             )
@@ -660,6 +660,8 @@ async def run_strassenabschnitte() -> None:
                 for node in await connector.emit_entities(normalized):
                     await upsert_node(node)
                     nodes_written += 1
+                    if nodes_written % 2000 == 0:
+                        log.info("strassenabschnitte: %d segments ingested…", nodes_written)
         edges_written += await _link_segments_to_streets(connector.source_name)
         edges_written += await _locate_nodes_in_geo_areas(
             "Road", connector.source_name, source_filter=connector.source_name
@@ -700,8 +702,8 @@ async def _link_segments_to_streets(source: str) -> int:
         )
         for row in rows:
             edge = part_of(
-                child_id=UUID(row["seg_id"]),
-                parent_id=UUID(row["street_id"]),
+                child_id=UUID(str(row["seg_id"])),
+                parent_id=UUID(str(row["street_id"])),
                 source=source,
                 observed_at=datetime.now(timezone.utc),
             )
