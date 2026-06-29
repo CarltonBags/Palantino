@@ -52,9 +52,27 @@ Return JSON:
 """
 
 SYNERGY_PROMPT = """\
-Analyze this subgraph for synergies: cases where civic entities or decisions
-reinforce, benefit from, or enable each other in a positive way
-(e.g., a council resolution that directly enabled a tender awarded to a local company).
+Analyze this subgraph for POTENTIAL, not-yet-realized synergies — untapped
+opportunities the city has NOT acted on, where two or more civic facts COULD
+reinforce or benefit each other if someone coordinated them.
+
+Focus on latent potential, e.g.:
+  - many separate events at the same venue / date cluster that could be jointly
+    promoted or share logistics, security, transit (as partly seen at the
+    Westfalenhalle event cluster);
+  - a council initiative and a nearby business / POI / infrastructure that could
+    partner or be timed together;
+  - planned works that could be coordinated with an event or another project.
+
+Hard rules:
+  - Do NOT report synergies that ALREADY exist or are already realized in the
+    data (e.g. a resolution that already enabled a tender, an edge that already
+    connects the two). Only surface opportunities that are NOT yet connected.
+  - You MUST validate each opportunity in reasoning_trace: state the concrete
+    mechanism by which it would create value, cite which facts in the subgraph
+    make the opportunity real and plausible, and what action would be required
+    to realize it. If you cannot justify genuine, actionable potential, omit it.
+  - Let confidence reflect how strong and actionable the unrealized potential is.
 
 Subgraph:
 {subgraph_json}
