@@ -11,6 +11,11 @@ const TYPE_COLOR: Record<string, string> = {
   synergy: "#2dd4bf",
 };
 
+const TYPE_LABEL: Record<string, string> = {
+  inefficiency: "Ineffizienz",
+  synergy: "Synergie",
+};
+
 export default function InsightsPanel({ onSelect }: Props) {
   const [items, setItems] = useState<StoredInsight[]>([]);
   const [typeFilter, setTypeFilter] = useState<string>("");
@@ -37,31 +42,31 @@ export default function InsightsPanel({ onSelect }: Props) {
   return (
     <div>
       <div className="section">
-        <h3>Insights — new</h3>
+        <h3>Erkenntnisse — neu</h3>
         <div className="row">
           <button className={typeFilter === "" ? "primary" : ""} onClick={() => setTypeFilter("")}>
-            All
+            Alle
           </button>
           <button
             className={typeFilter === "inefficiency" ? "primary" : ""}
             onClick={() => setTypeFilter("inefficiency")}
           >
-            Inefficiency
+            Ineffizienz
           </button>
           <button
             className={typeFilter === "synergy" ? "primary" : ""}
             onClick={() => setTypeFilter("synergy")}
           >
-            Synergy
+            Synergie
           </button>
         </div>
       </div>
 
-      {loading && <div className="muted">Loading…</div>}
+      {loading && <div className="muted">Lädt…</div>}
       {err && <div className="err">{err}</div>}
       {!loading && !err && items.length === 0 && (
         <div className="muted">
-          No new insights. Run the scan flow (<code>run_insight_scan</code>) to generate some.
+          Keine neuen Erkenntnisse. Scan-Flow (<code>run_insight_scan</code>) ausführen, um welche zu erzeugen.
         </div>
       )}
 
@@ -72,7 +77,7 @@ export default function InsightsPanel({ onSelect }: Props) {
               className="tag"
               style={{ color: TYPE_COLOR[it.insight_type] ?? "var(--text)" }}
             >
-              {it.insight_type}
+              {TYPE_LABEL[it.insight_type] ?? it.insight_type}
             </span>
             <span className="muted">{Math.round(it.confidence * 100)}%</span>
           </div>
@@ -90,9 +95,9 @@ export default function InsightsPanel({ onSelect }: Props) {
           </div>
 
           <div className="section" style={{ marginTop: 8 }}>
-            <h3>Evidence ({it.evidence_node_ids.length})</h3>
+            <h3>Belege ({it.evidence_node_ids.length})</h3>
             <button onClick={() => setExpanded(expanded === it.id ? null : it.id)}>
-              {expanded === it.id ? "hide graph" : "view graph"}
+              {expanded === it.id ? "Graph ausblenden" : "Graph anzeigen"}
             </button>
             {expanded === it.id && (
               <SubgraphView nodeIds={it.evidence_node_ids} onSelect={onSelect} />
@@ -101,9 +106,9 @@ export default function InsightsPanel({ onSelect }: Props) {
 
           <div className="row" style={{ marginTop: 8 }}>
             <button className="primary" onClick={() => decide(it.id, "confirmed")}>
-              Confirm
+              Bestätigen
             </button>
-            <button onClick={() => decide(it.id, "dismissed")}>Dismiss</button>
+            <button onClick={() => decide(it.id, "dismissed")}>Verwerfen</button>
           </div>
         </div>
       ))}

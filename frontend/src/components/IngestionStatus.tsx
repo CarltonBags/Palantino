@@ -11,7 +11,7 @@ export default function IngestionStatus() {
     return () => clearInterval(t);
   }, []);
 
-  if (runs.length === 0) return <div className="status-bar">No ingestion runs yet.</div>;
+  if (runs.length === 0) return <div className="status-bar">Noch keine Ingestion-Läufe.</div>;
 
   return (
     <div className="status-bar">

@@ -54,7 +54,7 @@ export default function SubgraphView({ nodeIds, focusId, onSelect }: Props) {
   }, [nodes, focusId]);
 
   if (err) return <div className="err">{err}</div>;
-  if (nodes.length === 0) return <div className="muted">No subgraph.</div>;
+  if (nodes.length === 0) return <div className="muted">Kein Subgraph.</div>;
 
   return (
     <svg width={W} height={H} style={{ display: "block", margin: "0 auto" }}>
