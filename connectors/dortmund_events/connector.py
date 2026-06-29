@@ -35,8 +35,13 @@ from ontology.nodes import Event, NodeBase
 _SEARCH_URL = "https://www.dortmund.de/api/search/proxy/search"
 _BASE_URL = "https://www.dortmund.de"
 _PAGE_SIZE = 100
-# Events run far into the future; cap a single run so it stays polite/bounded.
-_MAX_EVENTS_PER_RUN = 3000
+# The ES proxy paginates a mixed doc stream (events + news + pages) by from+size
+# and rejects offset+size > 10000 (Elasticsearch's default result window) with a
+# 500. ~5.4k of the reachable docs are events. Cap generously above that and stop
+# before the window so we ingest every reachable event without crashing. (A
+# size-3000 cap previously truncated the feed, dropping whole venues like FZW.)
+_MAX_RESULT_WINDOW = 10000
+_MAX_EVENTS_PER_RUN = 8000
 _TAG_RE = re.compile(r"<[^>]+>")
 
 
@@ -134,7 +139,7 @@ class DortmundEventsConnector(BaseConnector):
     async def fetch(self, checkpoint: dict[str, Any] | None = None) -> AsyncGenerator[Any, None]:
         offset = 0
         emitted = 0
-        while emitted < _MAX_EVENTS_PER_RUN:
+        while emitted < _MAX_EVENTS_PER_RUN and offset + _PAGE_SIZE <= _MAX_RESULT_WINDOW:
             resp = await self._post(
                 _SEARCH_URL,
                 json={"query": "*", "from": offset, "size": _PAGE_SIZE},
