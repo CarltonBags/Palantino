@@ -67,6 +67,13 @@ export default function NodeDetail({ nodeId, onSelect }: Props) {
         <span className="tag">{node.source}</span>
       </div>
 
+      {node.valid_from && (
+        <div className="kv">
+          <span className="k">when</span>
+          <span className="v">{formatWhen(node.valid_from)}</span>
+        </div>
+      )}
+
       <div className="section">
         <h3>Properties</h3>
         {Object.entries(node.properties).map(([k, v]) => (
@@ -151,6 +158,19 @@ export default function NodeDetail({ nodeId, onSelect }: Props) {
       </div>
     </div>
   );
+}
+
+function formatWhen(iso: string): string {
+  const d = new Date(iso);
+  if (isNaN(d.getTime())) return iso.slice(0, 10);
+  // If the timestamp has no time-of-day, show date only; else date + time.
+  const hasTime = d.getHours() !== 0 || d.getMinutes() !== 0;
+  return d.toLocaleString("de-DE", {
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    ...(hasTime ? { hour: "2-digit", minute: "2-digit" } : {}),
+  });
 }
 
 function formatVal(v: unknown): string {
