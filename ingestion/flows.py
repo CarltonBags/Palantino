@@ -403,9 +403,12 @@ async def run_dortmund_events() -> None:
                 for node in await connector.emit_entities(normalized):
                     await upsert_node(node)
                     nodes_written += 1
-        # The feed has no coordinates, but each event carries an explicit
-        # Stadtbezirk tag — a source fact. Link it deterministically rather than
-        # leaving location to the fuzzy text linker.
+        # Most events carry a venue Point, so snap them to their statistischer
+        # Bezirk by ST_Within (precise). For the few without coords, fall back to
+        # the coarse Stadtbezirk tag — a source fact.
+        edges_written += await _locate_nodes_in_geo_areas(
+            "Event", connector.source_name, source_filter=connector.source_name
+        )
         edges_written += await _link_events_to_bezirke(connector.source_name)
         log.info("dortmund-events done: %d nodes, %d edges", nodes_written, edges_written)
         await _finish_run(run_id, connector.source_name, nodes_written, edges_written)
@@ -445,10 +448,13 @@ async def _link_events_to_bezirke(source: str) -> int:
                 ORDER BY n.id, (g.properties->>'area_type' = 'stadtbezirk') DESC
             )
             SELECT event_id, geo_id FROM best b
+            -- Fallback only: skip events already located by the point ST_Within
+            -- pass (any existing LOCATED_IN), so coord-bearing events aren't
+            -- double-linked at two district granularities.
             WHERE NOT EXISTS (
                 SELECT 1 FROM edges e
                 WHERE e.edge_type = 'LOCATED_IN' AND e.from_node_id = b.event_id
-                  AND e.to_node_id = b.geo_id AND e.valid_to IS NULL
+                  AND e.valid_to IS NULL
             )
             """,
             source,

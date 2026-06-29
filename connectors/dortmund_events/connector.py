@@ -10,13 +10,16 @@ Shape:   reference — paginated full pull, dedupe by event-date id
 
 What this covers (the actual fairs / festivals / concerts / markets calendar):
   - Event nodes (event_type="public_event") with title, start datetime, category
-    (Konzert/Musik, Fest, …), Stadtbezirk, detail URL, cancelled/sold-out/free.
+    (Konzert/Musik, Fest, …), venue + address, a Point geometry, Stadtbezirk,
+    detail URL, cancelled/sold-out/free.
 Notes:
   - Earlier docs said this was CAPTCHA-walled — that was the pre-relaunch site.
     The relaunched portal serves events via this open search proxy.
   - Each "eventdatetime" doc is one dated occurrence; recurring events appear
-    once per date. No coordinates in the feed (location is a free-text contact),
-    so geo is left null; the text linker maps the Stadtbezirk tag to a GeoArea.
+    once per date. The feed DOES carry venue coordinates in locationAddress.geo
+    (lat/lng), so events get an exact Point and the flow snaps each to its
+    statistischer Bezirk via ST_Within. The Stadtbezirk tag is a coarse fallback
+    for the rare event whose coords are missing/outside Dortmund.
 """
 
 from __future__ import annotations
@@ -55,6 +58,23 @@ def _parse_dt(value: str | None) -> datetime | None:
         return datetime.fromisoformat(m.group(1)) if m else None
 
 
+def _to_float(value: Any) -> float | None:
+    try:
+        return float(value)
+    except (ValueError, TypeError):
+        return None
+
+
+# Rough Dortmund bounding box — guard against stray/0,0 or out-of-city coords.
+_DTM_BBOX = (7.30, 51.40, 7.70, 51.62)  # (min_lng, min_lat, max_lng, max_lat)
+
+
+def _in_dortmund(lng: float | None, lat: float | None) -> bool:
+    if lng is None or lat is None:
+        return False
+    return _DTM_BBOX[0] <= lng <= _DTM_BBOX[2] and _DTM_BBOX[1] <= lat <= _DTM_BBOX[3]
+
+
 def _tag_by_parent(content_tags: list[dict[str, Any]], parent: str) -> str | None:
     """First contentTag whose parentValues contain `parent` (e.g. 'Stadtbezirke')."""
     for tag in content_tags or []:
@@ -79,12 +99,26 @@ def parse_event(source: dict[str, Any]) -> dict[str, Any] | None:
     tags = source.get("contentTags") or []
     website_url = source.get("website_url") or ""
 
+    # Venue location: the feed carries an explicit point in locationAddress.geo
+    # (lat/lng as strings), plus a street address. Use it for an exact Point.
+    loc = event.get("locationAddress") or {}
+    geo = loc.get("geo") or {}
+    lat = _to_float(geo.get("lat"))
+    lng = _to_float(geo.get("lng"))
+    if not _in_dortmund(lng, lat):
+        lat = lng = None
+
     return {
         "source_id": source.get("id"),
         "title": title,
         "description": _strip_html(event.get("description") or event.get("text")),
         "category": _tag_by_parent(tags, "Veranstaltungskalender"),
         "stadtbezirk": _tag_by_parent(tags, "Stadtbezirke"),
+        "venue": loc.get("title"),
+        "street": " ".join(p for p in (loc.get("street"), loc.get("houseNumber")) if p) or None,
+        "postcode": loc.get("postcode"),
+        "lat": lat,
+        "lng": lng,
         "start_datetime": data.get("startDateTime") or (data.get("startCalendarDay") or {}).get("date"),
         "is_cancelled": bool(data.get("isCancelled")),
         "is_sold_out": bool(data.get("isSoldOut")),
@@ -130,13 +164,19 @@ class DortmundEventsConnector(BaseConnector):
         if not normalized.get("source_id"):
             return []
         prov = self._provenance(normalized["source_id"], normalized.get("url"))
+        lat, lng = normalized.get("lat"), normalized.get("lng")
+        geom = {"type": "Point", "coordinates": [lng, lat]} if lat and lng else None
         node = Event(
             label=normalized["label"],
             valid_from=normalized["valid_from"],
+            geom=geom,
             properties={
                 "event_type": "public_event",
                 "category": normalized.get("category"),
                 "stadtbezirk": normalized.get("stadtbezirk"),
+                "venue": normalized.get("venue"),
+                "street": normalized.get("street"),
+                "postcode": normalized.get("postcode"),
                 "description": normalized.get("description"),
                 "is_cancelled": normalized.get("is_cancelled"),
                 "is_sold_out": normalized.get("is_sold_out"),
