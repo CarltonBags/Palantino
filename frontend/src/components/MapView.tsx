@@ -2,8 +2,9 @@ import Map, { Layer, Source, type MapLayerMouseEvent } from "react-map-gl/maplib
 import type { FeatureCollection } from "../api";
 import { DORTMUND_CENTER } from "../nodeTypes";
 
-// Free MapLibre demo basemap — no API token required.
-const STYLE = "https://demotiles.maplibre.org/style.json";
+// CARTO dark-matter vector basemap — free, no API token, real streets/labels
+// (the MapLibre demotiles style is country-border polygons only, no city detail).
+const STYLE = "https://basemaps.cartocdn.com/gl/dark-matter-gl-style/style.json";
 
 interface Props {
   points: FeatureCollection; // each feature.properties has color + id + node_type
@@ -94,7 +95,7 @@ export default function MapView({ points, areas, roads, onSelect }: Props) {
           filter={["has", "point_count"]}
           layout={{
             "text-field": ["get", "point_count_abbreviated"],
-            "text-font": ["Open Sans Semibold"],
+            "text-font": ["Open Sans Bold"],
             "text-size": 12,
           }}
           paint={{ "text-color": "#ffffff" }}
