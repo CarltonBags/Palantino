@@ -191,6 +191,9 @@ CONFIRMED behind Link11 CAPTCHA. 4,000+ listings = best in city, but do NOT scra
 **URL:** https://open-data.dortmund.de/  ·  **Access:** API  ·  **Auth:** None (open)  
 Konzerthaus / Volkshochschule attendance counts only - historical, not a live calendar. Context node.
 
+### Open Data Portal - weekly markets + event venues  `[Tier 1]`  ★ built
+**Datasets:** `wochenmarkt` (14 recurring weekly markets, geo'd, with market day), `veranstaltungsorte` (11 festival/fair grounds, geo'd). XErleben schema → ingested by `connectors/ods_pois/` as POI nodes (poi_type `market` / `event_venue`; market day kept in `info`). This is the only OPEN events-ish data: recurring markets + the venues where fairs/festivals are held. **A dated fairs/festivals CALENDAR is NOT openly available** — dortmund.de Veranstaltungskalender is behind a Link11 CAPTCHA and coolibri/rausgegangen are commercial with no API (see Events section above).
+
 
 ## Police / Security
 

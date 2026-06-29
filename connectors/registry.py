@@ -76,7 +76,10 @@ REGISTRY: list[ConnectorSpec] = [
     ConnectorSpec(BrightSkyConnector, "5 * * * *", "Weather (Bright Sky / DWD)"),
     ConnectorSpec(PolizeiRssConnector, "25 * * * *", "Police press releases (RSS)"),
     ConnectorSpec(BaustellenConnector, "0 5 * * *", "City construction sites / roadworks"),
-    ConnectorSpec(OdsPoisConnector, "0 4 2 * *", "Civic POIs (XErleben: schools, …)"),
+    ConnectorSpec(
+        OdsPoisConnector, "0 4 2 * *",
+        "Civic POIs (XErleben: schools, weekly markets, event venues)",
+    ),
     ConnectorSpec(OdsStatsConnector, "0 4 3 * *", "Demographics by Stadtbezirk"),
     ConnectorSpec(VergabeNrwConnector, "0 7 * * *", "Public tenders (Vergabe Metropole Ruhr)"),
     ConnectorSpec(GtfsStaticConnector, "0 4 * * 3", "Transit schedules (GTFS static)"),

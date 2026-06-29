@@ -28,6 +28,8 @@ _BASE = settings.opendata_dortmund_base_url
 # XErleben POI datasets sharing the same schema. Extend as more are scoped in.
 _DATASETS = {
     "schulen": "school",
+    "wochenmarkt": "market",          # recurring weekly markets (public events)
+    "veranstaltungsorte": "event_venue",  # festival / fair grounds
 }
 _PAGE_SIZE = 100
 
@@ -79,6 +81,8 @@ class OdsPoisConnector(BaseConnector):
             "stadtbezirk": raw.get("stadtbezbe"),
             "stat_bezirk": raw.get("statbezibe"),
             "website": raw.get("link"),
+            # Free-text extra info — e.g. market day ("Markttag: freitags").
+            "info": raw.get("i_zusinfo") or raw.get("objektzusa"),
             "lon": lon,
             "lat": lat,
         }
@@ -99,6 +103,7 @@ class OdsPoisConnector(BaseConnector):
                 "stadtbezirk": normalized["stadtbezirk"],
                 "stat_bezirk": normalized["stat_bezirk"],
                 "website": normalized["website"],
+                "info": normalized["info"],
             },
             **prov,
         )

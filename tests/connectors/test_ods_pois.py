@@ -45,6 +45,34 @@ async def test_emit_poi(connector: OdsPoisConnector) -> None:
     assert node.inferred is False
 
 
+RAW_MARKET = {
+    "_dataset": "wochenmarkt",
+    "_poi_type": "market",
+    "geo_point_2d": {"lon": 7.4238, "lat": 51.5127},
+    "objektart": "Wochenmarkt",
+    "objektname": "Wochenmarkt Dorstfeld",
+    "i_zusinfo": "Markttag: freitags, Standort: Wilhelmplatz",
+    "strasse": "Wilhelmplatz",
+    "stadtbezbe": "Innenstadt-West",
+    "statbezibe": "Dorstfeld",
+    "link": None,
+}
+
+
+def test_normalize_market_captures_info(connector: OdsPoisConnector) -> None:
+    n = connector.normalize(RAW_MARKET)
+    assert n["poi_type"] == "market"
+    assert n["info"] == "Markttag: freitags, Standort: Wilhelmplatz"
+
+
+@pytest.mark.asyncio
+async def test_emit_market_poi(connector: OdsPoisConnector) -> None:
+    node = (await connector.emit_entities(connector.normalize(RAW_MARKET)))[0]
+    assert isinstance(node, POI)
+    assert node.properties["poi_type"] == "market"
+    assert "freitags" in node.properties["info"]
+
+
 @pytest.mark.asyncio
 async def test_emit_no_edges(connector: OdsPoisConnector) -> None:
     n = connector.normalize(RAW)
