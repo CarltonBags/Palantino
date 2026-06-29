@@ -392,7 +392,77 @@ async def run_wahlergebnisse() -> None:
 
 @flow(name="dortmund-events", log_prints=True)
 async def run_dortmund_events() -> None:
-    await _run_node_connector(DortmundEventsConnector(), get_run_logger())
+    log = get_run_logger()
+    connector = DortmundEventsConnector()
+    run_id = await _start_run(connector.source_name)
+    nodes_written = edges_written = 0
+    try:
+        async with connector:
+            async for raw in connector.fetch():
+                normalized = connector.normalize(raw)
+                for node in await connector.emit_entities(normalized):
+                    await upsert_node(node)
+                    nodes_written += 1
+        # The feed has no coordinates, but each event carries an explicit
+        # Stadtbezirk tag — a source fact. Link it deterministically rather than
+        # leaving location to the fuzzy text linker.
+        edges_written += await _link_events_to_bezirke(connector.source_name)
+        log.info("dortmund-events done: %d nodes, %d edges", nodes_written, edges_written)
+        await _finish_run(run_id, connector.source_name, nodes_written, edges_written)
+    except Exception as exc:
+        log.error("dortmund-events failed: %s", exc, exc_info=True)
+        await _finish_run(run_id, connector.source_name, nodes_written, edges_written, error=str(exc))
+        raise
+
+
+async def _link_events_to_bezirke(source: str) -> int:
+    """
+    LOCATED_IN: each Event → the GeoArea named in its `stadtbezirk` property.
+    The dortmund.de calendar gives the district explicitly (a source fact, so
+    inferred=False), so we join on the name instead of geocoding the venue text.
+    Matches stadtbezirk first, then statistischer_bezirk (e.g. 'Dorstfeld').
+    """
+    from uuid import UUID
+
+    from ontology.edges import located_in
+
+    written = 0
+    async with get_conn() as conn:
+        rows = await conn.fetch(
+            """
+            WITH best AS (
+                SELECT DISTINCT ON (n.id) n.id AS event_id, g.id AS geo_id
+                FROM nodes n
+                JOIN nodes g ON g.node_type = 'GeoArea'
+                    AND g.properties->>'area_type' IN ('stadtbezirk', 'statistischer_bezirk')
+                    AND lower(g.label) = lower(n.properties->>'stadtbezirk')
+                    AND g.valid_to IS NULL
+                WHERE n.node_type = 'Event' AND n.source = $1 AND n.valid_to IS NULL
+                  AND n.properties->>'stadtbezirk' IS NOT NULL
+                -- The tag is Stadtbezirk-granularity: prefer the stadtbezirk
+                -- match, fall back to a same-named statistischer Bezirk (e.g.
+                -- 'Dorstfeld') only when no Stadtbezirk carries that name.
+                ORDER BY n.id, (g.properties->>'area_type' = 'stadtbezirk') DESC
+            )
+            SELECT event_id, geo_id FROM best b
+            WHERE NOT EXISTS (
+                SELECT 1 FROM edges e
+                WHERE e.edge_type = 'LOCATED_IN' AND e.from_node_id = b.event_id
+                  AND e.to_node_id = b.geo_id AND e.valid_to IS NULL
+            )
+            """,
+            source,
+        )
+        for row in rows:
+            edge = located_in(
+                from_node_id=UUID(str(row["event_id"])),
+                to_node_id=UUID(str(row["geo_id"])),
+                source=source,
+                observed_at=datetime.now(timezone.utc),
+            )
+            await upsert_edge(edge)
+            written += 1
+    return written
 
 
 # ── Spatially-located node connectors (POI + construction sites) ──────────────
