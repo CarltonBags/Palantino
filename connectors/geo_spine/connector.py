@@ -26,12 +26,24 @@ logger = logging.getLogger(__name__)
 
 BASE = settings.opendata_dortmund_base_url
 
-# Dataset IDs on the OpenDataSoft platform
+# Dataset IDs on the OpenDataSoft platform (v2.1, flat records).
+# Roads have dedicated connectors (strassen / strassenabschnitte); the spine is
+# just the two area layers.
 DATASETS = {
-    "stadtbezirke": "stadtbezirke-dortmund",
-    "stat_bezirke": "statistische-bezirke-dortmund",
-    "strassen": "fb62-strassen",
+    "stadtbezirke": "fb62-stadtbezirke",
+    "stat_bezirke": "fb62-statistischebezirke",
 }
+_PAGE_SIZE = 100
+
+
+def _geometry(feature: dict[str, Any] | None) -> dict[str, Any] | None:
+    """ODS `geografische_polygone` is a GeoJSON Feature; pull the inner geometry."""
+    if not feature:
+        return None
+    geom = feature.get("geometry", feature)
+    if geom.get("type") and geom.get("coordinates"):
+        return {"type": geom["type"], "coordinates": geom["coordinates"]}
+    return None
 
 
 class GeoSpineConnector(BaseConnector):
@@ -41,15 +53,10 @@ class GeoSpineConnector(BaseConnector):
     async def fetch(self, checkpoint: dict[str, Any] | None = None) -> AsyncGenerator[Any, None]:
         for dataset_key, dataset_id in DATASETS.items():
             offset = 0
-            limit = 100
             while True:
                 resp = await self._get(
                     f"{BASE}/catalog/datasets/{dataset_id}/records",
-                    params={
-                        "limit": limit,
-                        "offset": offset,
-                        "select": "*",
-                    },
+                    params={"limit": _PAGE_SIZE, "offset": offset},
                 )
                 data = resp.json()
                 records = data.get("results", [])
@@ -57,23 +64,23 @@ class GeoSpineConnector(BaseConnector):
                     break
                 for rec in records:
                     yield {"dataset": dataset_key, "record": rec}
-                if len(records) < limit:
+                if offset + _PAGE_SIZE >= data.get("total_count", 0):
                     break
-                offset += limit
+                offset += _PAGE_SIZE
 
     def normalize(self, raw: Any) -> dict[str, Any]:
         dataset = raw["dataset"]
         rec = raw["record"]
-        fields = rec.get("fields", rec)
+        geom = _geometry(rec.get("geografische_polygone"))
 
         if dataset == "stadtbezirke":
             return {
                 "dataset": dataset,
                 "area_type": "stadtbezirk",
-                "source_id": str(fields.get("stadtbezirk_nr", fields.get("nr", ""))),
-                "label": fields.get("stadtbezirk_name", fields.get("name", "Unknown")),
-                "ags": fields.get("ags"),
-                "geom": rec.get("geo_shape") or fields.get("geo_shape"),
+                "source_id": str(rec.get("stadtbezirk_nr", "")),
+                "label": rec.get("stadtbezirk_bezeichnung", "Unknown"),
+                "ags": rec.get("ags"),
+                "geom": geom,
                 "source_url": f"https://open-data.dortmund.de/explore/dataset/{DATASETS['stadtbezirke']}/",
                 "parent_id": None,
             }
@@ -82,22 +89,11 @@ class GeoSpineConnector(BaseConnector):
             return {
                 "dataset": dataset,
                 "area_type": "statistischer_bezirk",
-                "source_id": str(fields.get("stat_bezirk_nr", fields.get("nr", ""))),
-                "label": fields.get("stat_bezirk_name", fields.get("name", "Unknown")),
-                "parent_source_id": str(fields.get("stadtbezirk_nr", "")),
-                "geom": rec.get("geo_shape") or fields.get("geo_shape"),
+                "source_id": str(rec.get("statistischer_bezirk_nr", "")),
+                "label": rec.get("statistischer_bezirk", "Unknown"),
+                "parent_source_id": str(rec.get("stadtbezirk_nr", "")),
+                "geom": geom,
                 "source_url": f"https://open-data.dortmund.de/explore/dataset/{DATASETS['stat_bezirke']}/",
-            }
-
-        if dataset == "strassen":
-            return {
-                "dataset": dataset,
-                "source_id": str(fields.get("strassenid", fields.get("id", ""))),
-                "label": fields.get("strassenname", fields.get("name", "Unknown")),
-                "road_type": fields.get("strassenklasse", fields.get("klasse")),
-                "length_m": fields.get("laenge_m"),
-                "geom": rec.get("geo_shape") or fields.get("geo_shape"),
-                "source_url": f"https://open-data.dortmund.de/explore/dataset/{DATASETS['strassen']}/",
             }
 
         return {"dataset": dataset, "raw": raw}
