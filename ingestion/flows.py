@@ -785,7 +785,11 @@ if __name__ == "__main__":
         run_brightsky.to_deployment(name="brightsky-hourly", cron="5 * * * *"),
         run_lanuv_air.to_deployment(name="lanuv-air-hourly", cron="15 * * * *"),
         run_polizei_rss.to_deployment(name="polizei-rss-hourly", cron="25 * * * *"),
-        run_gtfs_realtime.to_deployment(name="gtfs-realtime-10min", cron="*/10 * * * *"),
+        # gtfs_realtime disabled: the gtfs.de feed is Germany-wide (~59k entities
+        # per poll, no city filter), which floods the DB and drops the Supabase
+        # connection. Re-enable only after ingesting gtfs_static and filtering
+        # realtime to Dortmund route_ids.
+        # run_gtfs_realtime.to_deployment(name="gtfs-realtime-10min", cron="*/10 * * * *"),
         # resolution + reasoning — after the daily ingests settle
         run_text_linking.to_deployment(name="text-linking-daily", cron="30 7 * * *"),
         run_insight_scan.to_deployment(name="insight-scan-daily", cron="0 8 * * *"),
