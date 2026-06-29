@@ -28,6 +28,7 @@ from prefect.schedules import CronSchedule
 
 from connectors.autobahn.connector import AutobahnConnector
 from connectors.baustellen.connector import BaustellenConnector
+from connectors.dortmund_events.connector import DortmundEventsConnector
 from connectors.brightsky.connector import BrightSkyConnector
 from connectors.geo_spine.connector import GeoSpineConnector
 from connectors.gremienniederschriften.connector import GremienNiederschriftenConnector
@@ -389,6 +390,11 @@ async def run_gtfs_realtime() -> None:
 @flow(name="wahlergebnisse", log_prints=True)
 async def run_wahlergebnisse() -> None:
     await _run_node_connector(WahlergebnisseConnector(), get_run_logger())
+
+
+@flow(name="dortmund-events", log_prints=True)
+async def run_dortmund_events() -> None:
+    await _run_node_connector(DortmundEventsConnector(), get_run_logger())
 
 
 # ── Spatially-located node connectors (POI + construction sites) ──────────────
@@ -772,6 +778,7 @@ if __name__ == "__main__":
             name="gremienniederschriften-daily", cron="45 6 * * *"
         ),
         run_baustellen.to_deployment(name="baustellen-daily", cron="0 5 * * *"),
+        run_dortmund_events.to_deployment(name="dortmund-events-daily", cron="0 8 * * *"),
         run_autobahn.to_deployment(name="autobahn-traffic-30min", cron="*/30 * * * *"),
         run_vergabe_nrw.to_deployment(name="vergabe-nrw-daily", cron="0 7 * * *"),
         # snapshot / event_stream — hourly+

@@ -20,6 +20,7 @@ from connectors.autobahn.connector import AutobahnConnector
 from connectors.base import BaseConnector
 from connectors.baustellen.connector import BaustellenConnector
 from connectors.brightsky.connector import BrightSkyConnector
+from connectors.dortmund_events.connector import DortmundEventsConnector
 from connectors.geo_spine.connector import GeoSpineConnector
 from connectors.gremienniederschriften.connector import GremienNiederschriftenConnector
 from connectors.gremientermine.connector import GremienTermineConnector
@@ -75,6 +76,10 @@ REGISTRY: list[ConnectorSpec] = [
     ),
     ConnectorSpec(BrightSkyConnector, "5 * * * *", "Weather (Bright Sky / DWD)"),
     ConnectorSpec(PolizeiRssConnector, "25 * * * *", "Police press releases (RSS)"),
+    ConnectorSpec(
+        DortmundEventsConnector, "0 8 * * *",
+        "Public events calendar (fairs, festivals, concerts) from dortmund.de",
+    ),
     ConnectorSpec(BaustellenConnector, "0 5 * * *", "City construction sites / roadworks"),
     ConnectorSpec(
         OdsPoisConnector, "0 4 2 * *",

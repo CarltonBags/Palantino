@@ -183,9 +183,9 @@ CHECKED: no public API. Commercial publisher (Verlag Lensing-Wolff). Strong Dort
 **URL:** https://rausgegangen.de/  ·  **Access:** Web / partner-only  ·  **Auth:** Account  
 CHECKED: no public/open API. 'Zentrale' API is partner/organizer-only (scannerapi behind login). Good curated Dortmund culture events; manual reference or partnership only.
 
-### dortmund.de Veranstaltungskalender  `[Avoid]`
-**URL:** https://www.dortmund.de/dortmund-erleben/veranstaltungskalender/  ·  **Access:** Web (bot-protected)  ·  **Auth:** None  
-CONFIRMED behind Link11 CAPTCHA. 4,000+ listings = best in city, but do NOT scrape. Pursue a direct data ask to the city.
+### dortmund.de Veranstaltungskalender  `[Tier 1]`  ★ built (re-evaluated 2026-06)
+**URL:** https://www.dortmund.de/dortmund-erleben/veranstaltungskalender/  ·  **API:** `POST https://www.dortmund.de/api/search/proxy/search`  ·  **Auth:** None  
+**RE-EVALUATED:** the old "Link11 CAPTCHA, do not scrape" verdict was for the pre-relaunch site. The relaunched portal serves events through an open Elasticsearch search proxy — events are docs of `type="eventdatetime"`. robots.txt has **no Disallow**; works with our honest bot UA (no spoofing). Built as `connectors/dortmund_events/`: POST `{"query":"*","from":N,"size":100}`, keep `eventdatetime` hits → Event nodes (`event_type=public_event`) with title, start datetime, category (Konzert/Fest/Ausstellung…), Stadtbezirk, detail URL, cancelled/sold-out/free flags. ~19k dated occurrences; capped per run. No coords in feed → text linker maps the Stadtbezirk tag to a GeoArea. THE city events calendar — fairs, festivals, concerts.
 
 ### Open Data Portal - historical event stats  `[Tier 1]`
 **URL:** https://open-data.dortmund.de/  ·  **Access:** API  ·  **Auth:** None (open)  
