@@ -32,6 +32,11 @@ cp .env.example .env          # set ANTHROPIC_API_KEY for the reasoning layer
 # 1. Bring up Postgres+PostGIS (migrations auto-run via initdb), Prefect, API.
 docker compose up -d db prefect api
 #    API → http://localhost:8000/docs   ·   Prefect → http://localhost:4200
+#
+#    Cloud Postgres instead (Supabase/Neon): set DATABASE_URL in .env, enable the
+#    postgis/pg_trgm/uuid-ossp extensions, then bootstrap the schema:
+#      python -m scripts.bootstrap            # apply migrations + verify
+#      python -m scripts.bootstrap --ingest   # also load the geo spine
 
 # 2. Run a connector to load some data (geographic spine first).
 python -m ingestion.flows           # deploys all flows on their cadences
