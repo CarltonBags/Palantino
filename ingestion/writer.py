@@ -49,11 +49,13 @@ async def upsert_node(node: NodeBase) -> tuple[str, bool]:
                 new_hash = _content_hash(node.properties, node.label)
                 old_hash = _content_hash(existing["properties"], existing["label"])
                 if new_hash == old_hash:
-                    # unchanged — just touch observed_at
+                    # unchanged — just touch observed_at. Sync the in-memory id to
+                    # the stored one so edges built from this node object resolve.
                     await conn.execute(
                         "UPDATE nodes SET observed_at = $1 WHERE id = $2",
                         now, existing["id"],
                     )
+                    node.id = existing["id"]
                     return str(existing["id"]), False
                 else:
                     # changed — close old version
@@ -66,15 +68,18 @@ async def upsert_node(node: NodeBase) -> tuple[str, bool]:
         if node.geom:
             geom_wkt = f"SRID=4326;{_geojson_to_ewkt(node.geom)}"
 
+        # Insert with the node's own id so edges built from the in-memory node
+        # object (which reference node.id) resolve against the stored row.
         row = await conn.fetchrow(
             """
             INSERT INTO nodes
-                (node_type, label, properties, source, source_id, source_url,
+                (id, node_type, label, properties, source, source_id, source_url,
                  observed_at, valid_from, valid_to, inferred, confidence, reasoning_trace, geom)
-            VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,
-                ST_GeomFromEWKT($13))
+            VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,
+                ST_GeomFromEWKT($14))
             RETURNING id
             """,
+            node.id,
             node.node_type,
             node.label,
             node.properties,
