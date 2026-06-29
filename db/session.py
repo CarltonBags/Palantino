@@ -1,32 +1,54 @@
+"""
+Async Postgres connection pool (asyncpg).
+
+The whole data layer — writer, flows, resolver, text linker, scanner, API — is
+written in the asyncpg dialect: `$1` placeholders, `conn.fetch / fetchrow /
+execute`, and execute() returning a status string. So the pool is asyncpg, not
+psycopg.
+"""
+
+from __future__ import annotations
+
+import json
 from contextlib import asynccontextmanager
 from typing import AsyncGenerator
 
-import psycopg
-from psycopg.rows import dict_row
-from psycopg_pool import AsyncConnectionPool
+import asyncpg
 
-from civic_graph.config import settings
+from config import settings
 
-_pool: AsyncConnectionPool | None = None
+_pool: asyncpg.Pool | None = None
 
 
-async def get_pool() -> AsyncConnectionPool:
+async def _init_conn(conn: asyncpg.Connection) -> None:
+    # Decode JSON/JSONB to Python objects on read and encode dicts on write, so
+    # callers get/give dicts (not raw strings) for `properties`, geometry, etc.
+    for typename in ("json", "jsonb"):
+        await conn.set_type_codec(
+            typename, encoder=json.dumps, decoder=json.loads, schema="pg_catalog"
+        )
+
+
+async def get_pool() -> asyncpg.Pool:
     global _pool
     if _pool is None:
-        _pool = AsyncConnectionPool(
-            conninfo=settings.postgres_dsn,
+        _pool = await asyncpg.create_pool(
+            host=settings.postgres_host,
+            port=settings.postgres_port,
+            user=settings.postgres_user,
+            password=settings.postgres_password,
+            database=settings.postgres_db,
             min_size=2,
             max_size=10,
-            kwargs={"row_factory": dict_row},
+            init=_init_conn,
         )
-        await _pool.open()
     return _pool
 
 
 @asynccontextmanager
-async def get_conn() -> AsyncGenerator[psycopg.AsyncConnection, None]:
+async def get_conn() -> AsyncGenerator[asyncpg.Connection, None]:
     pool = await get_pool()
-    async with pool.connection() as conn:
+    async with pool.acquire() as conn:
         yield conn
 
 

@@ -343,7 +343,7 @@ async def _persist(candidate: Candidate, insight_type: str, insight: dict[str, A
             str(insight.get("description", "")),
             confidence,
             candidate.node_ids,
-            json.dumps(insight.get("evidence", [])),
+            insight.get("evidence", []),
             insight.get("reasoning_trace"),
             MODEL,
             candidate.generator,

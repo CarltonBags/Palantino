@@ -18,7 +18,6 @@ Or trigger one-off:
 from __future__ import annotations
 
 import asyncio
-import json
 import logging
 from datetime import datetime, timedelta, timezone
 from typing import Any
@@ -100,7 +99,7 @@ async def _finish_run(
             WHERE id = $1
             """,
             run_id, status, nodes_written, edges_written,
-            error, json.dumps(checkpoint) if checkpoint else None,
+            error, checkpoint,
         )
 
 
