@@ -23,7 +23,6 @@ from datetime import datetime, timedelta, timezone
 from typing import Any
 
 from prefect import flow, get_run_logger, task
-from prefect.schedules import CronSchedule
 
 from connectors.autobahn.connector import AutobahnConnector
 from connectors.baustellen.connector import BaustellenConnector
