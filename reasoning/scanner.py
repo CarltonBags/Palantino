@@ -42,6 +42,9 @@ logger = logging.getLogger(__name__)
 
 MODEL = "claude-sonnet-4-6"
 CONFIDENCE_FLOOR = 0.7
+# News-context synergies are creative/contextual and human-reviewed, so persist
+# them at a lower bar — surface more, let a person confirm or dismiss.
+NEWS_CONFIDENCE_FLOOR = 0.6
 
 
 def _get_conn() -> Any:
@@ -304,6 +307,58 @@ async def ego_network_candidates(min_degree: int = 3, limit: int = 50) -> list[C
     return out
 
 
+async def news_context_candidates(
+    news_limit: int = 15, event_sample: int = 35
+) -> list[Candidate]:
+    """
+    News-driven context. Anchor on a recent local-news article and pull a
+    city-wide sample of upcoming public events into the same subgraph, so the
+    model can creatively connect what the news SIGNALS (a need, mood, theme,
+    audience) to an event / place elsewhere that could address or amplify it.
+
+    Deliberately NOT spatially constrained — the relevant event may be across
+    town (e.g. an article on social isolation in one district + a community event
+    in another). News is the contextual layer the other generators lack.
+    """
+    out: list[Candidate] = []
+    async with _get_conn() as conn:
+        anchors = await conn.fetch(
+            """
+            SELECT id FROM nodes
+            WHERE node_type = 'Event' AND properties->>'event_type' = 'news'
+              AND valid_to IS NULL
+            ORDER BY valid_from DESC NULLS LAST
+            LIMIT $1
+            """,
+            news_limit,
+        )
+        events = await conn.fetch(
+            """
+            SELECT id FROM nodes
+            WHERE node_type = 'Event'
+              AND source = 'dortmund_veranstaltungskalender'
+              AND valid_to IS NULL AND geom IS NOT NULL
+              AND (valid_from IS NULL OR valid_from >= NOW() - INTERVAL '7 days')
+            -- Favour free / community events (better civic-synergy partners than
+            -- commercial concerts) and randomise for venue/district diversity, so
+            -- the news has something connectable rather than 18 shows at one hall.
+            ORDER BY (properties->>'free_of_charge' = 'true') DESC, random()
+            LIMIT $1
+            """,
+            event_sample,
+        )
+        event_ids = [str(r["id"]) for r in events]
+        if not event_ids:
+            return out
+        for a in anchors:
+            node_ids = [str(a["id"]), *event_ids]
+            nodes, edges = await _gather_subgraph(conn, node_ids)
+            if len(nodes) < 2:
+                continue
+            out.append(Candidate("news_context", node_ids, str(a["id"]), nodes, edges))
+    return out
+
+
 # ── reasoning + persistence ─────────────────────────────────────────────────────
 
 def _build_client() -> Any:
@@ -331,7 +386,8 @@ async def _reason(client: Any, candidate: Candidate, insight_type: str) -> list[
 
 async def _persist(candidate: Candidate, insight_type: str, insight: dict[str, Any]) -> bool:
     confidence = float(insight.get("confidence", 0) or 0)
-    if confidence < CONFIDENCE_FLOOR:
+    floor = NEWS_CONFIDENCE_FLOOR if candidate.generator == "news_context" else CONFIDENCE_FLOOR
+    if confidence < floor:
         return False
     key = candidate_key(insight_type, candidate.node_ids)
     async with _get_conn() as conn:
@@ -367,10 +423,16 @@ async def scan(insight_types: tuple[str, ...] = ("inefficiency", "synergy")) -> 
         + await area_bridge_candidates()
         + await ego_network_candidates()
     )
-    logger.info("insight scan: %d candidate subgraphs (deduped)", len(candidates))
+    # News-context candidates run through synergy only (they surface creative
+    # news→event/place connections, not inefficiencies).
+    news_candidates = dedup_candidates(await news_context_candidates())
+    logger.info(
+        "insight scan: %d candidate subgraphs + %d news-context (deduped)",
+        len(candidates), len(news_candidates),
+    )
 
     client = _build_client()
-    counts = {"candidates": len(candidates), "written": 0}
+    counts = {"candidates": len(candidates) + len(news_candidates), "written": 0}
     for candidate in candidates:
         for insight_type in insight_types:
             try:
@@ -379,4 +441,11 @@ async def scan(insight_types: tuple[str, ...] = ("inefficiency", "synergy")) -> 
                         counts["written"] += 1
             except Exception as exc:  # one bad candidate shouldn't abort the scan
                 logger.warning("scan failed on %s/%s: %s", candidate.anchor_id, insight_type, exc)
+    for candidate in news_candidates:
+        try:
+            for insight in await _reason(client, candidate, "synergy"):
+                if await _persist(candidate, "synergy", insight):
+                    counts["written"] += 1
+        except Exception as exc:
+            logger.warning("news scan failed on %s: %s", candidate.anchor_id, exc)
     return counts

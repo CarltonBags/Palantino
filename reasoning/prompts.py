@@ -21,7 +21,8 @@ Rules:
   Never characterize motives or personality.
 - Return structured JSON: a list of insights, each with type, description, evidence (node/edge IDs),
   confidence (0-1), and a reasoning_trace.
-- confidence < 0.7: do not return.
+- Report your honest confidence (0-1); calibrate it, don't inflate. Do not return
+  anything below 0.5 (the system filters the rest by type).
 - Language: write every human-readable field (title, description, reasoning_trace)
   in GERMAN. Keep the JSON keys and the "type" value (inefficiency/synergy) in
   English; node/edge IDs stay verbatim.
@@ -77,6 +78,16 @@ Focus on latent potential ACROSS otherwise-unconnected actors or domains, e.g.:
   - a council initiative and a nearby business / POI / infrastructure that could
     partner or be timed together;
   - planned works that could be coordinated with an event or another project.
+
+News as civic signal: if the subgraph contains news articles (event_type =
+"news"), read them as SIGNALS of what the city needs, feels, or is talking about
+— a problem, a mood, an underserved group, an emerging theme. Then creatively but
+plausibly connect that signal to an event, place, business, or civic action that
+could address, serve, or amplify it (e.g. an article about social isolation and a
+community/social event that could reach those residents). This link MAY span
+different districts — it need not be nearby. Be imaginative, but stay grounded:
+cite the specific article, make the benefit concrete, and don't force a connection
+that isn't genuinely plausible.
 
 Hard rules:
   - NO intra-venue bundling of commercial venues. Do NOT propose synergies that
