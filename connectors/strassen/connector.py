@@ -25,7 +25,11 @@ from ontology.edges import EdgeBase
 from ontology.nodes import NodeBase, Road
 
 _BASE = settings.opendata_dortmund_base_url
-_DATASET = "fb62-strassen-statistische-bezirke"
+# Plain street register: one row per street (unique Straßenschlüssel). The
+# *-statistische-bezirke variant repeats a street once per Bezirk → duplicate
+# keys; the per-street district is recovered from strassenabschnitte geometry
+# (LOCATED_IN) instead.
+_DATASET = "fb62-strassen"
 _SOURCE_URL = f"https://open-data.dortmund.de/explore/dataset/{_DATASET}/"
 _RECORDS_URL = f"{_BASE}/catalog/datasets/{_DATASET}/records"
 _PAGE_SIZE = 100

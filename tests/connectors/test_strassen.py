@@ -8,10 +8,6 @@ from ontology.nodes import Road
 RAW = {
     "strassenname": "Brechtener Straße",
     "strassenschlussel": "70644",
-    "statistischer_bezirk_nr": "210",
-    "statistischer_bezirk_bezeichnung": "Brechten",
-    "stadtbezirk_nr": "2",
-    "stadtbezirk_bezeichnung": "Eving",
     "kommune": "Dortmund",
 }
 
@@ -25,8 +21,8 @@ def test_normalize(connector: StrassenConnector) -> None:
     n = connector.normalize(RAW)
     assert n["source_id"] == "70644"
     assert n["name_de"] == "Brechtener Straße"
-    assert n["stat_bezirk"] == "Brechten"
-    assert n["stadtbezirk"] == "Eving"
+    # plain fb62-strassen has no Bezirk columns
+    assert n["stat_bezirk"] is None
 
 
 @pytest.mark.asyncio
@@ -36,7 +32,6 @@ async def test_emit_road(connector: StrassenConnector) -> None:
     assert node.source == "opendata_dortmund_strassen"
     assert node.label == "Brechtener Straße"
     assert node.properties["road_type"] == "street"
-    assert node.properties["stat_bezirk"] == "Brechten"
     assert node.inferred is False
 
 
