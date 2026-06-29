@@ -33,6 +33,8 @@ npm run typecheck
   synergy), filterable; Confirm / Dismiss; click evidence nodes to open them.
 - **Resolution review**: pending cross-source merge candidates → Merge / Reject
   (writes a `SAME_AS` edge on merge).
+- **Sources tab**: full connector catalog (shape, cadence, last-run health) from
+  the registry — including sources that have never run.
 - **Ingestion status bar**: per-connector last-run health, auto-refreshing.
 
 ## Layout
@@ -48,6 +50,7 @@ src/
     ├── NodeDetail.tsx     properties · ego graph · edges · history · reasoning
     ├── SubgraphView.tsx   SVG graph view (ego-network / insight evidence)
     ├── InsightsPanel.tsx  scanner insights · confirm/dismiss · evidence graph
+    ├── SourcesPanel.tsx   source catalog (all connectors · cadence · health)
     ├── ResolutionPanel.tsx merge/reject candidates
     └── IngestionStatus.tsx per-connector health
 ```

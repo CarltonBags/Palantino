@@ -4,6 +4,7 @@ import { GEO_NODE_TYPES, ROAD_COLOR } from "../nodeTypes";
 import NodeDetail from "./NodeDetail";
 import ResolutionPanel from "./ResolutionPanel";
 import InsightsPanel from "./InsightsPanel";
+import SourcesPanel from "./SourcesPanel";
 
 interface Props {
   activeTypes: Set<string>;
@@ -16,7 +17,7 @@ interface Props {
   onSelect: (id: string | null) => void;
 }
 
-type Tab = "explore" | "insights";
+type Tab = "explore" | "insights" | "sources";
 
 export default function Sidebar({
   activeTypes,
@@ -59,6 +60,9 @@ export default function Sidebar({
           <button className={tab === "insights" ? "primary" : ""} onClick={() => setTab("insights")}>
             Insights
           </button>
+          <button className={tab === "sources" ? "primary" : ""} onClick={() => setTab("sources")}>
+            Sources
+          </button>
         </div>
       )}
 
@@ -73,6 +77,8 @@ export default function Sidebar({
         </>
       ) : tab === "insights" ? (
         <InsightsPanel onSelect={onSelect} />
+      ) : tab === "sources" ? (
+        <SourcesPanel />
       ) : (
         <>
           <div className="section">

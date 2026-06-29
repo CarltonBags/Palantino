@@ -56,6 +56,20 @@ export interface IngestionRun {
   error_message: string | null;
 }
 
+export interface SourceCatalogEntry {
+  name: string;
+  shape: string;
+  cadence_cron: string;
+  description: string;
+  enabled: boolean;
+  last_run: {
+    status: string;
+    started_at: string;
+    nodes_written: number;
+    edges_written: number;
+  } | null;
+}
+
 export interface ResolutionCandidate {
   id: string;
   method: string;
@@ -144,6 +158,7 @@ export const api = {
   setInsightStatus: (id: string, status: "confirmed" | "dismissed" | "new") =>
     post<{ id: string; status: string }>(`/insights/stored/${id}/status`, { status }),
   ingestionStatus: () => get<IngestionRun[]>(`/status/ingestion`),
+  sourceCatalog: () => get<SourceCatalogEntry[]>(`/status/sources`),
   resolutionCandidates: (status = "pending") =>
     get<ResolutionCandidate[]>(`/resolution/candidates?status=${status}`),
   resolveCandidate: (id: string, merge: boolean) =>
