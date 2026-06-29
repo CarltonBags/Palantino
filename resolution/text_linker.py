@@ -33,7 +33,8 @@ logger = logging.getLogger(__name__)
 # Node types that are essentially text and should be linked to geography.
 TEXT_NODE_TYPES = ("Meeting", "Resolution", "AgendaItem", "Tender", "Event")
 # Properties (besides label) worth scanning for place mentions, per the schema.
-TEXT_PROPERTY_KEYS = ("gremium", "title", "description", "reason", "subtitle")
+# `categories` (RSS tags, e.g. Nordstadtblogger) often name a Stadtteil/Bezirk.
+TEXT_PROPERTY_KEYS = ("gremium", "title", "description", "reason", "subtitle", "categories")
 # Gazetteer terms shorter than this are too ambiguous to match safely.
 MIN_TERM_LEN = 4
 
@@ -113,6 +114,8 @@ def node_text(node: dict[str, Any]) -> str:
         val = props.get(key)
         if isinstance(val, str):
             parts.append(val)
+        elif isinstance(val, list):
+            parts.extend(str(v) for v in val if isinstance(v, str))
     return " ".join(parts)
 
 
