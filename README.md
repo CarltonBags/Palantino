@@ -46,6 +46,7 @@ demographics · **Autobahn live traffic**. One folder per source under
   the graph at a past instant; `/nodes/{id}/history` returns an entity's versions)
 - `GET /geo/areas`, `/geo/nodes`, `/geo/pois-in-area/{id}` — map layers (GeoJSON)
 - `GET /search?q=` — fuzzy label search (pg_trgm)
+- `POST /subgraph` — nodes + edges among a given node set (graph viz)
 - `POST /insights` — Claude reasoning over a hand-picked subgraph (ad hoc)
 - `GET /insights/stored`, `POST /insights/stored/{id}/status` — insights the
   reasoning **scanner** found automatically (confirm / dismiss)

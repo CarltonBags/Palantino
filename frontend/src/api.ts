@@ -125,6 +125,8 @@ export const api = {
     const qs = q.toString();
     return get<FeatureCollection>(`/geo/nodes${qs ? `?${qs}` : ""}`);
   },
+  subgraph: (nodeIds: string[]) =>
+    post<{ nodes: GraphNode[]; edges: GraphEdge[] }>(`/subgraph`, { node_ids: nodeIds }),
   node: (id: string) => get<GraphNode>(`/nodes/${id}`),
   nodeHistory: (id: string) => get<GraphNode[]>(`/nodes/${id}/history`),
   nodeEdges: (id: string) => get<GraphEdge[]>(`/nodes/${id}/edges`),

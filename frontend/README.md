@@ -45,8 +45,9 @@ src/
 └── components/
     ├── MapView.tsx        MapLibre map (areas + points)
     ├── Sidebar.tsx        Explore/Insights tabs · search · layers · detail · review
-    ├── NodeDetail.tsx     properties · edges · reasoning
-    ├── InsightsPanel.tsx  scanner insights · confirm/dismiss · evidence
+    ├── NodeDetail.tsx     properties · ego graph · edges · history · reasoning
+    ├── SubgraphView.tsx   SVG graph view (ego-network / insight evidence)
+    ├── InsightsPanel.tsx  scanner insights · confirm/dismiss · evidence graph
     ├── ResolutionPanel.tsx merge/reject candidates
     └── IngestionStatus.tsx per-connector health
 ```

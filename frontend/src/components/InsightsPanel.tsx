@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { api, type StoredInsight } from "../api";
+import SubgraphView from "./SubgraphView";
 
 interface Props {
   onSelect: (id: string) => void;
@@ -15,6 +16,7 @@ export default function InsightsPanel({ onSelect }: Props) {
   const [typeFilter, setTypeFilter] = useState<string>("");
   const [err, setErr] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  const [expanded, setExpanded] = useState<string | null>(null);
 
   function load() {
     setLoading(true);
@@ -89,13 +91,12 @@ export default function InsightsPanel({ onSelect }: Props) {
 
           <div className="section" style={{ marginTop: 8 }}>
             <h3>Evidence ({it.evidence_node_ids.length})</h3>
-            <div className="row">
-              {it.evidence_node_ids.slice(0, 12).map((nid) => (
-                <button key={nid} onClick={() => onSelect(nid)}>
-                  node
-                </button>
-              ))}
-            </div>
+            <button onClick={() => setExpanded(expanded === it.id ? null : it.id)}>
+              {expanded === it.id ? "hide graph" : "view graph"}
+            </button>
+            {expanded === it.id && (
+              <SubgraphView nodeIds={it.evidence_node_ids} onSelect={onSelect} />
+            )}
           </div>
 
           <div className="row" style={{ marginTop: 8 }}>

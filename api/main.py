@@ -298,6 +298,36 @@ async def get_insights(req: InsightRequest) -> dict[str, Any]:
     return result
 
 
+# ── Subgraph (for graph visualization) ──────────────────────────────────────────
+
+class SubgraphRequest(BaseModel):
+    node_ids: list[UUID]
+
+
+@app.post("/subgraph")
+async def get_subgraph(req: SubgraphRequest) -> dict[str, Any]:
+    """
+    Given a set of node IDs, return those nodes plus the edges among them.
+    Powers the frontend graph view (insight evidence, a node's ego-network).
+    """
+    ids = [str(nid) for nid in req.node_ids]
+    if not ids:
+        return {"nodes": [], "edges": []}
+    async with get_conn() as conn:
+        nodes = await conn.fetch(
+            "SELECT id, node_type, label, properties, source, source_url "
+            "FROM nodes WHERE id = ANY($1::uuid[]) AND valid_to IS NULL",
+            ids,
+        )
+        edges = await conn.fetch(
+            "SELECT id, edge_type, from_node_id, to_node_id, properties, inferred "
+            "FROM edges WHERE from_node_id = ANY($1::uuid[]) "
+            "AND to_node_id = ANY($1::uuid[]) AND valid_to IS NULL",
+            ids,
+        )
+    return {"nodes": [dict(n) for n in nodes], "edges": [dict(e) for e in edges]}
+
+
 # ── Stored insights (from the reasoning scanner) ────────────────────────────────
 
 @app.get("/insights/stored")

@@ -1,5 +1,6 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { api, type GraphEdge, type GraphNode, type Insight } from "../api";
+import SubgraphView from "./SubgraphView";
 
 interface Props {
   nodeId: string;
@@ -50,6 +51,11 @@ export default function NodeDetail({ nodeId, onSelect }: Props) {
     }
   }
 
+  const egoIds = useMemo(() => {
+    const neighbours = edges.flatMap((e) => [e.from_node_id, e.to_node_id]);
+    return Array.from(new Set([nodeId, ...neighbours]));
+  }, [edges, nodeId]);
+
   if (err) return <div className="err">{err}</div>;
   if (!node) return <div className="muted">Loading…</div>;
 
@@ -80,6 +86,13 @@ export default function NodeDetail({ nodeId, onSelect }: Props) {
           </div>
         )}
       </div>
+
+      {egoIds.length > 1 && (
+        <div className="section">
+          <h3>Ego graph</h3>
+          <SubgraphView nodeIds={egoIds} focusId={nodeId} onSelect={onSelect} />
+        </div>
+      )}
 
       <div className="section">
         <h3>Edges ({edges.length})</h3>
