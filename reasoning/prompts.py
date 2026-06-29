@@ -70,15 +70,22 @@ Analyze this subgraph for POTENTIAL, not-yet-realized synergies — untapped
 opportunities the city has NOT acted on, where two or more civic facts COULD
 reinforce or benefit each other if someone coordinated them.
 
-Focus on latent potential, e.g.:
-  - many separate events at the same venue / date cluster that could be jointly
-    promoted or share logistics, security, transit (as partly seen at the
-    Westfalenhalle event cluster);
+Focus on latent potential ACROSS otherwise-unconnected actors or domains, e.g.:
+  - an event and an UNRELATED nearby actor — a different organizer, a community
+    group, a local business, a civic initiative — that could cross-promote or
+    share audience / logistics;
   - a council initiative and a nearby business / POI / infrastructure that could
     partner or be timed together;
   - planned works that could be coordinated with an event or another project.
 
 Hard rules:
+  - NO intra-venue bundling of commercial venues. Do NOT propose synergies that
+    merely pool several events at the SAME large, professionally-run venue
+    (Westfalenhalle, Konzerthaus, Messe/arenas, big private clubs). Those are
+    already well marketed; the city adds nothing by bundling them. A commercial-
+    venue event may appear in a synergy ONLY when paired with a DIFFERENT,
+    otherwise-unconnected actor or domain (a community event, a civic/council
+    action, a small local business) — never with another event at the same venue.
   - TEMPORAL RELEVANCE (critical for events — they are time-sensitive): an
     opportunity is only actionable if its parts are timely relative to the
     current date and to each other. Use each node's valid_from. Do NOT pair a
