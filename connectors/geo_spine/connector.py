@@ -106,13 +106,19 @@ class GeoSpineConnector(BaseConnector):
         dataset = normalized["dataset"]
 
         if dataset in ("stadtbezirke", "stat_bezirke"):
+            props: dict[str, Any] = {
+                "area_type": normalized.get("area_type"),
+                "ags": normalized.get("ags"),
+            }
+            # Carry the parent Stadtbezirk key so the flow can resolve PART_OF
+            # once both layers are loaded (link_stat_to_stadt reads this).
+            parent_source_id = normalized.get("parent_source_id")
+            if parent_source_id:
+                props["_parent_source_id"] = parent_source_id
             return [
                 GeoArea(
                     label=normalized["label"],
-                    properties={
-                        "area_type": normalized.get("area_type"),
-                        "ags": normalized.get("ags"),
-                    },
+                    properties=props,
                     geom=normalized.get("geom"),
                     **self._provenance(normalized["source_id"], normalized.get("source_url")),
                 )
@@ -134,17 +140,10 @@ class GeoSpineConnector(BaseConnector):
         return []
 
     async def emit_edges(self, normalized: dict[str, Any], nodes: list[NodeBase]) -> list[EdgeBase]:
-        edges: list[EdgeBase] = []
-
-        if normalized["dataset"] == "stat_bezirke" and nodes:
-            stat_bezirk = nodes[0]
-            parent_source_id = normalized.get("parent_source_id", "")
-            if parent_source_id:
-                # Edge will be finalized in the flow once parent nodes are written.
-                # Store the parent source_id in properties so the flow can resolve it.
-                stat_bezirk.properties["_parent_source_id"] = parent_source_id
-
-        return edges
+        # PART_OF (statistischer Bezirk → Stadtbezirk) is resolved by the flow via
+        # link_stat_to_stadt once both layers are loaded; the parent key now rides
+        # on the node's properties (set in emit_entities).
+        return []
 
     async def link_stat_to_stadt(
         self,

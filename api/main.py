@@ -458,6 +458,31 @@ async def resolve_candidate(candidate_id: UUID, req: ResolveRequest) -> dict[str
 
 # ── Ingestion status ───────────────────────────────────────────────────────────
 
+@app.get("/status/sources")
+async def source_catalog() -> list[dict[str, Any]]:
+    """
+    Full source catalog from the connector registry, left-joined to each
+    connector's latest run — so sources that have never run still show up.
+    """
+    from connectors.registry import registry_catalog
+
+    async with get_conn() as conn:
+        runs = await conn.fetch(
+            """
+            SELECT DISTINCT ON (connector)
+                connector, started_at, finished_at, status, nodes_written, edges_written
+            FROM ingestion_runs
+            ORDER BY connector, started_at DESC
+            """
+        )
+    by_connector = {r["connector"]: dict(r) for r in runs}
+    catalog = []
+    for spec in registry_catalog():
+        run = by_connector.get(spec["name"])
+        catalog.append({**spec, "last_run": run})
+    return catalog
+
+
 @app.get("/status/ingestion")
 async def ingestion_status() -> list[dict[str, Any]]:
     async with get_conn() as conn:

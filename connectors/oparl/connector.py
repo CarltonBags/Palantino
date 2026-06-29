@@ -32,7 +32,9 @@ from ontology.nodes import AgendaItem, Meeting, NodeBase, Organization, Person, 
 
 logger = logging.getLogger(__name__)
 
-ENDPOINT = settings.oparl_endpoint_url.rstrip("/")
+# Dortmund disabled OParl in production, so the endpoint is normally unset.
+# Tolerate None at import time (empty string) and guard at runtime in fetch().
+ENDPOINT = (settings.oparl_endpoint_url or "").rstrip("/")
 SOURCE_URL_BASE = ENDPOINT
 
 
@@ -43,6 +45,9 @@ class OParlConnector(BaseConnector):
     # ── fetch ──────────────────────────────────────────────────────────────────
 
     async def fetch(self, checkpoint: dict[str, Any] | None = None) -> AsyncGenerator[Any, None]:
+        if not ENDPOINT:
+            logger.warning("OParl endpoint not configured — skipping (Dortmund disabled it).")
+            return
         modified_since: str | None = (checkpoint or {}).get("modified_since")
 
         body_url = await self._get_body_url()
