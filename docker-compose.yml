@@ -1,0 +1,43 @@
+services:
+  db:
+    image: postgis/postgis:16-3.4
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-civic_graph}
+      POSTGRES_USER: ${POSTGRES_USER:-civic}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-civic}
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./db/migrations:/docker-entrypoint-initdb.d
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-civic}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  prefect:
+    image: prefecthq/prefect:3-python3.12
+    command: prefect server start --host 0.0.0.0
+    ports:
+      - "4200:4200"
+    environment:
+      PREFECT_API_DATABASE_CONNECTION_URL: postgresql+asyncpg://${POSTGRES_USER:-civic}:${POSTGRES_PASSWORD:-civic}@db:5432/${POSTGRES_DB:-civic_graph}
+    depends_on:
+      db:
+        condition: service_healthy
+
+  api:
+    build: .
+    command: uvicorn api.main:app --host 0.0.0.0 --port 8000 --reload
+    ports:
+      - "8000:8000"
+    env_file: .env
+    volumes:
+      - .:/app
+    depends_on:
+      db:
+        condition: service_healthy
+
+volumes:
+  pgdata:

@@ -1,0 +1,106 @@
+import { useEffect, useMemo, useState } from "react";
+import { api, type FeatureCollection } from "./api";
+import { COLOR_BY_TYPE, GEO_NODE_TYPES } from "./nodeTypes";
+import MapView from "./components/MapView";
+import Sidebar from "./components/Sidebar";
+import IngestionStatus from "./components/IngestionStatus";
+
+const EMPTY: GeoJSON.FeatureCollection = { type: "FeatureCollection", features: [] };
+
+export default function App() {
+  const [activeTypes, setActiveTypes] = useState<Set<string>>(
+    () => new Set(GEO_NODE_TYPES.map((t) => t.type)),
+  );
+  const [byType, setByType] = useState<Record<string, FeatureCollection>>({});
+  const [areas, setAreas] = useState<GeoJSON.FeatureCollection>(EMPTY);
+  const [roads, setRoads] = useState<FeatureCollection>({ type: "FeatureCollection", features: [] });
+  const [showRoads, setShowRoads] = useState(true);
+  const [asOf, setAsOf] = useState<string>(""); // "" = current
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+
+  // Changing the as-of instant invalidates all cached point layers.
+  useEffect(() => {
+    setByType({});
+  }, [asOf]);
+
+  // District boundaries (once).
+  useEffect(() => {
+    api
+      .geoAreas("statistischer_bezirk")
+      .then((rows) =>
+        setAreas({
+          type: "FeatureCollection",
+          features: rows
+            .filter((r) => r.geometry)
+            .map((r) => ({
+              type: "Feature" as const,
+              geometry: r.geometry,
+              properties: { id: r.id, label: r.label },
+            })),
+        }),
+      )
+      .catch(() => setAreas(EMPTY));
+    // Road segments (LineStrings) — capped by the API for map performance.
+    api
+      .geoNodes("Road")
+      .then(setRoads)
+      .catch(() => setRoads({ type: "FeatureCollection", features: [] }));
+  }, []);
+
+  const roadsShown: FeatureCollection = useMemo(
+    () => (showRoads ? roads : { type: "FeatureCollection", features: [] }),
+    [showRoads, roads],
+  );
+
+  // Fetch each active type's points lazily, cache by type.
+  useEffect(() => {
+    activeTypes.forEach((t) => {
+      if (byType[t]) return;
+      api
+        .geoNodes(t, undefined, asOf || undefined)
+        .then((fc) => setByType((prev) => ({ ...prev, [t]: fc })))
+        .catch(() => setByType((prev) => ({ ...prev, [t]: { type: "FeatureCollection", features: [] } })));
+    });
+  }, [activeTypes, byType, asOf]);
+
+  // Merge active layers into one collection, tagging each feature with its colour.
+  const points: FeatureCollection = useMemo(() => {
+    const features = Array.from(activeTypes).flatMap((t) => {
+      const fc = byType[t];
+      if (!fc) return [];
+      const color = COLOR_BY_TYPE[t] ?? "#2dd4bf";
+      return fc.features.map((f) => ({
+        ...f,
+        properties: { ...f.properties, color },
+      }));
+    });
+    return { type: "FeatureCollection", features };
+  }, [activeTypes, byType]);
+
+  function toggleType(t: string) {
+    setActiveTypes((prev) => {
+      const next = new Set(prev);
+      next.has(t) ? next.delete(t) : next.add(t);
+      return next;
+    });
+  }
+
+  return (
+    <div className="app">
+      <Sidebar
+        activeTypes={activeTypes}
+        toggleType={toggleType}
+        showRoads={showRoads}
+        toggleRoads={() => setShowRoads((v) => !v)}
+        asOf={asOf}
+        setAsOf={setAsOf}
+        selectedId={selectedId}
+        onSelect={setSelectedId}
+      />
+      <div className="map-wrap">
+        <MapView points={points} areas={areas} roads={roadsShown} onSelect={setSelectedId} />
+      </div>
+      <IngestionStatus />
+    </div>
+  );
+}
