@@ -12,6 +12,18 @@ the data-source inventory and temporal design.
 Python 3.12 · FastAPI · PostgreSQL + PostGIS · Prefect (ingestion) · Claude
 (reasoning) · React + TypeScript + MapLibre (frontend).
 
+The knowledge graph is a **property graph on Postgres** (`nodes` + `edges`
+tables, typed, with provenance + bitemporal + inference), traversed via SQL — not
+Neo4j. Apache AGE can be added later if deep Cypher pathfinding is ever needed.
+
+### Cloud Postgres
+
+Needs PostGIS + pg_trgm + uuid-ossp. Supabase and Neon both support all three.
+Set `DATABASE_URL` to point at a managed instance. Behind a transaction pooler
+(Supabase :6543, Neon pooled, PgBouncer) also set `DB_STATEMENT_CACHE_SIZE=0`
+(asyncpg prepared statements require it). Note: Apache AGE is not available on
+Supabase — irrelevant here since the graph is plain relational tables.
+
 ## Quickstart
 
 ```bash

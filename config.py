@@ -10,6 +10,13 @@ class Settings(BaseSettings):
     postgres_host: str = "localhost"
     postgres_port: int = 5432
 
+    # Cloud Postgres (Supabase / Neon / RDS …): if set, an asyncpg DSN URL like
+    # postgresql://user:pass@host:5432/db — used instead of the fields above.
+    database_url: str | None = None
+    # Set 0 when connecting through a transaction pooler (Supabase :6543 / Neon
+    # pooled / PgBouncer) — asyncpg prepared statements break otherwise.
+    db_statement_cache_size: int = 100
+
     opendata_dortmund_base_url: str = "https://open-data.dortmund.de/api/explore/v2.1"
     # OParl disabled by Dortmund in production (Oct 2024). None = skip OParl flows.
     oparl_endpoint_url: str | None = None

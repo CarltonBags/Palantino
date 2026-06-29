@@ -32,16 +32,26 @@ async def _init_conn(conn: asyncpg.Connection) -> None:
 async def get_pool() -> asyncpg.Pool:
     global _pool
     if _pool is None:
-        _pool = await asyncpg.create_pool(
-            host=settings.postgres_host,
-            port=settings.postgres_port,
-            user=settings.postgres_user,
-            password=settings.postgres_password,
-            database=settings.postgres_db,
+        common = dict(
             min_size=2,
             max_size=10,
             init=_init_conn,
+            # 0 disables the prepared-statement cache — required behind a
+            # transaction pooler (Supabase :6543, Neon pooled, PgBouncer).
+            statement_cache_size=settings.db_statement_cache_size,
         )
+        if settings.database_url:
+            # Cloud Postgres via a single DSN URL (Supabase / Neon / RDS …).
+            _pool = await asyncpg.create_pool(dsn=settings.database_url, **common)
+        else:
+            _pool = await asyncpg.create_pool(
+                host=settings.postgres_host,
+                port=settings.postgres_port,
+                user=settings.postgres_user,
+                password=settings.postgres_password,
+                database=settings.postgres_db,
+                **common,
+            )
     return _pool
 
 
