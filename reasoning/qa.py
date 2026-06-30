@@ -21,14 +21,18 @@ from typing import Any
 
 from db.session import get_conn
 from embeddings.embedder import embed_texts, to_pgvector
-from reasoning.llm import complete, fast_model
+from reasoning.llm import complete
 from reasoning.prompts import (
+    ANALYSIS_PROMPT,
+    ANALYSIS_SYSTEM_PROMPTS,
     QA_PROMPT,
     QA_SYSTEM_PROMPT,
     QUERY_INTENT_PROMPT,
     QUERY_INTENT_SYSTEM,
     format_subgraph,
 )
+
+_LENSES = {"factual", "synergy", "inefficiency", "scandal"}
 
 logger = logging.getLogger(__name__)
 
@@ -69,13 +73,18 @@ def _valid_date(value: Any) -> date | None:
 
 async def extract_intent(question: str) -> dict[str, Any]:
     """Cheap pre-pass: focused search phrase + structured filters."""
-    fallback = {"search_text": question, "node_types": [], "date_from": None, "date_to": None}
+    fallback = {
+        "lens": "factual", "search_text": question, "node_types": [],
+        "category": None, "list": False, "date_from": None, "date_to": None,
+    }
     try:
+        # Use the main model (not the fast one): reliable lens classification +
+        # node-type extraction matters more here than the tiny cost of one short
+        # call. Reasoning models need headroom (hidden reasoning_content).
         raw = await complete(
             QUERY_INTENT_SYSTEM,
             QUERY_INTENT_PROMPT.format(question=question, today=date.today().isoformat()),
-            max_tokens=400,
-            model=fast_model(),
+            max_tokens=1500,
         )
     except Exception as exc:  # intent is best-effort — never block the answer
         logger.warning("intent extraction failed: %s", exc)
@@ -84,7 +93,9 @@ async def extract_intent(question: str) -> dict[str, Any]:
     search_text = str(data.get("search_text") or "").strip() or question
     node_types = [t for t in (data.get("node_types") or []) if t in _VALID_NODE_TYPES]
     category = str(data.get("category")).strip() if data.get("category") else None
+    lens = str(data.get("lens") or "factual").strip().lower()
     return {
+        "lens": lens if lens in _LENSES else "factual",
         "search_text": search_text,
         "node_types": node_types,
         "category": category,
@@ -135,6 +146,7 @@ async def _retrieve(
 
 def _intent_out(intent: dict[str, Any]) -> dict[str, Any]:
     return {
+        "lens": intent.get("lens", "factual"),
         "search_text": intent["search_text"],
         "node_types": intent["node_types"],
         "category": intent.get("category"),
@@ -186,12 +198,18 @@ async def answer_question(question: str, k: int = 24) -> dict[str, Any]:
         )
 
     subgraph = format_subgraph([dict(n) for n in nodes], [dict(e) for e in edges])
-    prompt = QA_PROMPT.format(
-        question=question, subgraph_json=subgraph, today=date.today().isoformat()
-    )
+    today = date.today().isoformat()
+    lens = intent["lens"]
+    if lens == "factual":
+        system = QA_SYSTEM_PROMPT
+        prompt = QA_PROMPT.format(question=question, subgraph_json=subgraph, today=today)
+    else:
+        # analytical lens (synergy / inefficiency / scandal) over the same subgraph
+        system = ANALYSIS_SYSTEM_PROMPTS[lens]
+        prompt = ANALYSIS_PROMPT.format(question=question, subgraph_json=subgraph, today=today)
     # Reasoning models (e.g. deepseek-v4-pro) spend the budget on hidden
     # reasoning before the answer, so give ample headroom or `content` truncates.
-    answer = await complete(QA_SYSTEM_PROMPT, prompt, max_tokens=4000)
+    answer = await complete(system, prompt, max_tokens=4000)
 
     citations = [
         {

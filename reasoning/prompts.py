@@ -165,6 +165,60 @@ Beantworte die Frage anhand dieser Fakten.
 """
 
 
+# ── Analytical lenses for the chat (prose, grounded) ────────────────────────────
+
+_ANALYSIS_BASE = """\
+Du analysierst den Wissensgraphen der Stadt Dortmund. Arbeite AUSSCHLIESSLICH mit
+den bereitgestellten Fakten (Knoten + Kanten mit Quelle und Zeitstempel).
+Grundregeln:
+- Erfinde nichts. Wenn die Fakten nichts Belastbares hergeben, sage das offen.
+- Über reale benannte Personen/Amtsträger nur belegte Beobachtungen, niemals
+  Mutmaßungen über Motive, Charakter oder Schuld.
+- Trenne Beobachtung von Bewertung. Nenne zu jedem Punkt die Quelle.
+- Antworte auf Deutsch in knappem Markdown (kurze Punkte mit Beleg)."""
+
+ANALYSIS_SYSTEM_PROMPTS = {
+    "inefficiency": _ANALYSIS_BASE + """
+
+Aufgabe: Finde INEFFIZIENZEN — Fälle, in denen sich städtische Vorgänge
+widersprechen, doppeln oder Aufwand verschwenden (z.B. eine Straße wird saniert,
+während ein Beschluss dort etwas anderes plant; zwei überlappende Vergaben für
+denselben Abschnitt; dasselbe Thema mehrfach in kurzer Folge behandelt).
+IGNORIERE Artefakte der Datenmodellierung (eine Straße in mehreren Abschnitten;
+ein Ort als Stadtbezirk UND statistischer Bezirk) — das sind keine Ineffizienzen.""",
+    "synergy": _ANALYSIS_BASE + """
+
+Aufgabe: Finde UNGENUTZTE SYNERGIEN — noch nicht verbundene Gelegenheiten, bei
+denen zwei Vorgänge/Akteure sich gegenseitig verstärken könnten, wenn jemand sie
+koordinierte. Nur ECHTES, zeitlich aktuelles Potenzial (keine bereits realisierten
+Verbindungen, keine Jahre alten, abgeschlossenen Vorgänge). Bündle keine Events
+desselben kommerziellen Veranstaltungsorts miteinander. Begründe je Gelegenheit
+den Mechanismus und was zur Umsetzung nötig wäre.""",
+    "scandal": _ANALYSIS_BASE + """
+
+Aufgabe: Finde POTENZIELLE AUFFÄLLIGKEITEN / UNREGELMÄSSIGKEITEN, die eine
+menschliche Prüfung wert sind — NICHT um Anschuldigungen zu erheben.
+- Formuliere als "auffällig / prüfenswert", niemals als "Korruption", "Skandal"
+  oder "illegal". Du stellst Muster fest, du klagst niemanden an.
+- Beispiele: dieselbe Firma gewinnt wiederholt Vergaben; eine Vergabe folgt
+  unmittelbar auf einen thematisch passenden Ratsbeschluss; eine Entscheidung
+  begünstigt eine im Graphen verbundene Partei; ungewöhnliche zeitliche Nähe.
+- Zu jeder Auffälligkeit: die konkreten Fakten + Quelle, und WARUM es prüfenswert
+  ist. Zeigen die Fakten nichts Belastbares, sage das klar — erfinde nichts.""",
+}
+
+ANALYSIS_PROMPT = """\
+Aktuelles Datum: {today}.
+
+Anliegen: {question}
+
+Relevante Fakten aus dem Wissensgraphen:
+{subgraph_json}
+
+Führe deine Analyse anhand dieser Fakten durch und nenne die Quellen.
+"""
+
+
 # ── Query intent extraction (hybrid retrieval pre-pass) ─────────────────────────
 
 QUERY_INTENT_SYSTEM = """\
@@ -179,6 +233,7 @@ Frage: {question}
 
 Gib NUR dieses JSON zurück:
 {{
+  "lens": "<factual | synergy | inefficiency | scandal>",
   "search_text": "<knappe Suchphrase auf Deutsch, auf die Kernabsicht fokussiert; behalte Eigennamen, Stadtteile und Themen, entferne Füllwörter>",
   "node_types": [<0 oder mehr aus: "AgendaItem","Resolution","Meeting","Event","Tender","POI","Organization","Road","GeoArea">],
   "category": "<Veranstaltungskategorie falls genannt, z.B. "Konzert", "Ausstellung", "Führung", "Wochenmarkt", "Kabarett"; sonst null>",
@@ -188,6 +243,10 @@ Gib NUR dieses JSON zurück:
 }}
 
 Regeln:
+- lens = "factual" (Standard), AUSSER die Frage zielt klar auf eine Analyse:
+  Synergien/Potenziale/Kooperationen -> "synergy"; Ineffizienzen/Widersprüche/
+  Doppelarbeit/Verschwendung -> "inefficiency"; Auffälligkeiten/Unregelmäßigkeiten/
+  Missstände/"Skandale"/Interessenkonflikte -> "scandal".
 - node_types nur setzen, wenn die Frage klar einen Typ meint:
   Ratsbeschlüsse/Anträge -> ["Resolution","AgendaItem"]; Sitzungen -> ["Meeting"];
   Veranstaltungen/Events/Konzerte/Nachrichten -> ["Event"]; Ausschreibungen -> ["Tender"];

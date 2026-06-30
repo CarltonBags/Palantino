@@ -17,8 +17,9 @@ interface Turn {
 const EXAMPLES = [
   "Welche Konzerte gibt es nächstes Wochenende?",
   "Was wurde 2023 zu Radwegen in Hörde beschlossen?",
-  "Was gibt es zum Thema Geflüchtete und Integration?",
-  "Welche Ausstellungen laufen gerade in der Innenstadt?",
+  "Welche ungenutzten Synergien gibt es in der Nordstadt?",
+  "Gibt es Auffälligkeiten bei öffentlichen Vergaben?",
+  "Welche Ineffizienzen gibt es bei Ratsbeschlüssen zu Radwegen?",
 ];
 
 export default function ChatView({ onOpenNode }: Props) {
