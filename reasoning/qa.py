@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import json
 import logging
+import random
 from datetime import date
 from typing import Any
 
@@ -191,6 +192,61 @@ async def _expand(conn: Any, seed_ids: list[str], max_total: int = 40, hops: int
     return list(seen)
 
 
+async def _diverse_seeds(
+    conn: Any, qvec: list[float], k: int, pool_size: int = 60, lam: float = 0.55
+) -> list[dict[str, Any]]:
+    """
+    MMR seed selection for BROAD analytical queries. Pure KNN on a generic query
+    ("Synergien für die Stadt") deterministically returns the same densest cluster
+    every time → repetitive answers. Instead pull a larger relevance pool, pick a
+    RANDOM first seed from the top (rotation across asks), then greedily add seeds
+    that are relevant but dissimilar to those already chosen (MMR → breadth).
+    """
+    rows = await conn.fetch(
+        f"""
+        SELECT {_NODE_COLS}, e.embedding::text AS emb
+        FROM node_embeddings e
+        JOIN nodes n ON n.id = e.node_id
+        WHERE n.valid_to IS NULL
+        ORDER BY e.embedding <=> $1::vector
+        LIMIT $2
+        """,
+        to_pgvector(qvec), pool_size,
+    )
+    if not rows:
+        return []
+    import numpy as np
+
+    def _vec(s: str) -> Any:
+        v = np.array([float(x) for x in s.strip("[]").split(",")])
+        n = np.linalg.norm(v)
+        return v / n if n else v
+
+    vecs = [_vec(r["emb"]) for r in rows]
+    q = np.array(qvec, dtype=float)
+    q = q / (np.linalg.norm(q) or 1.0)
+    sim_q = [float(q @ v) for v in vecs]
+    n = len(rows)
+    k = min(k, n)
+    selected = [random.randrange(min(12, n))]  # random anchor → rotates per ask
+    while len(selected) < k:
+        best_i, best = -1, -1e9
+        for i in range(n):
+            if i in selected:
+                continue
+            div = max(float(vecs[i] @ vecs[j]) for j in selected)
+            score = lam * sim_q[i] - (1.0 - lam) * div
+            if score > best:
+                best, best_i = score, i
+        selected.append(best_i)
+    out = []
+    for i in selected:
+        d = dict(rows[i])
+        d.pop("emb", None)
+        out.append(d)
+    return out
+
+
 def _intent_out(intent: dict[str, Any]) -> dict[str, Any]:
     return {
         "lens": intent.get("lens", "factual"),
@@ -223,12 +279,18 @@ async def answer_question(question: str, k: int = 24) -> dict[str, Any]:
     has_filters = bool(
         intent["node_types"] or intent["category"] or intent["date_from"] or intent["date_to"]
     )
-    k_eff = 60 if list_mode else k  # enumeration needs room; analysis stays tight
+    # Broad analytical ask (a lens, no narrowing filters) → diversify the seeds
+    # (MMR + random anchor) so it doesn't keep returning the same dense cluster.
+    broad = intent["lens"] != "factual" and not has_filters and not list_mode
+    k_eff = 60 if list_mode else k
     async with get_conn() as conn:
-        nodes = await _retrieve(conn, lit, intent, k_eff, use_filters=has_filters, list_mode=list_mode)
-        # If filters were too narrow and found nothing, retry unfiltered + semantic.
-        if not nodes and has_filters:
-            nodes = await _retrieve(conn, lit, intent, k_eff, use_filters=False, list_mode=False)
+        if broad:
+            nodes = await _diverse_seeds(conn, qvec, k_eff)
+        else:
+            nodes = await _retrieve(conn, lit, intent, k_eff, use_filters=has_filters, list_mode=list_mode)
+            # If filters were too narrow and found nothing, retry unfiltered + semantic.
+            if not nodes and has_filters:
+                nodes = await _retrieve(conn, lit, intent, k_eff, use_filters=False, list_mode=False)
         if not nodes:
             return {
                 "answer": "Dazu liegen im Wissensgraphen keine passenden Fakten vor.",
