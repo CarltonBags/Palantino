@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 from contextlib import asynccontextmanager
+from datetime import date
 from typing import Any
 from uuid import UUID
 
@@ -279,7 +280,7 @@ async def get_insights(req: InsightRequest) -> dict[str, Any]:
     )
 
     template = INEFFICIENCY_PROMPT if req.insight_type == "inefficiency" else SYNERGY_PROMPT
-    prompt = template.format(subgraph_json=subgraph)
+    prompt = template.format(subgraph_json=subgraph, today=date.today().isoformat())
 
     client = anthropic.Anthropic(api_key=settings.anthropic_api_key)
     message = client.messages.create(

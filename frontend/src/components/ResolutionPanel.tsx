@@ -24,7 +24,7 @@ export default function ResolutionPanel({ onSelect }: Props) {
 
   return (
     <div className="section">
-      <h3>Resolution review ({cands.length})</h3>
+      <h3>Abgleich-Prüfung ({cands.length})</h3>
       {cands.map((c) => (
         <div className="cand" key={c.id} style={{ flexDirection: "column", alignItems: "stretch" }}>
           <div className="muted">
@@ -45,9 +45,9 @@ export default function ResolutionPanel({ onSelect }: Props) {
           </div>
           <div className="row" style={{ marginTop: 6 }}>
             <button className="primary" onClick={() => decide(c.id, true)}>
-              Merge
+              Zusammenführen
             </button>
-            <button onClick={() => decide(c.id, false)}>Reject</button>
+            <button onClick={() => decide(c.id, false)}>Ablehnen</button>
           </div>
         </div>
       ))}

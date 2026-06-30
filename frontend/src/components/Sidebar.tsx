@@ -55,13 +55,13 @@ export default function Sidebar({
       {!selectedId && (
         <div className="row" style={{ marginTop: 12 }}>
           <button className={tab === "explore" ? "primary" : ""} onClick={() => setTab("explore")}>
-            Explore
+            Erkunden
           </button>
           <button className={tab === "insights" ? "primary" : ""} onClick={() => setTab("insights")}>
-            Insights
+            Erkenntnisse
           </button>
           <button className={tab === "sources" ? "primary" : ""} onClick={() => setTab("sources")}>
-            Sources
+            Quellen
           </button>
         </div>
       )}
@@ -69,7 +69,7 @@ export default function Sidebar({
       {selectedId ? (
         <>
           <button onClick={() => onSelect(null)} style={{ marginTop: 12 }}>
-            ← back to map
+            ← zurück zur Karte
           </button>
           <div className="section">
             <NodeDetail nodeId={selectedId} onSelect={onSelect} />
@@ -82,10 +82,10 @@ export default function Sidebar({
       ) : (
         <>
           <div className="section">
-            <h3>Search</h3>
+            <h3>Suche</h3>
             <input
               type="search"
-              placeholder="Search nodes (≥2 chars)…"
+              placeholder="Knoten suchen (≥2 Zeichen)…"
               value={q}
               onChange={(e) => setQ(e.target.value)}
             />
@@ -102,7 +102,7 @@ export default function Sidebar({
           </div>
 
           <div className="section">
-            <h3>Layers</h3>
+            <h3>Ebenen</h3>
             {GEO_NODE_TYPES.map((t) => (
               <div
                 className={`legend-row ${activeTypes.has(t.type) ? "" : "off"}`}
@@ -118,24 +118,24 @@ export default function Sidebar({
               onClick={toggleRoads}
             >
               <span className="dot" style={{ background: ROAD_COLOR }} />
-              Roads (segments)
+              Straßen (Abschnitte)
             </div>
           </div>
 
           <div className="section">
-            <h3>Time travel (as of)</h3>
+            <h3>Zeitreise (Stand)</h3>
             <input
               type="datetime-local"
               value={asOf}
               onChange={(e) => setAsOf(e.target.value)}
             />
             <div className="muted" style={{ marginTop: 6 }}>
-              {asOf ? `Showing graph as of ${asOf}` : "Showing current graph"}
+              {asOf ? `Graph zum Stand ${asOf}` : "Aktueller Graph"}
               {asOf && (
                 <>
                   {" "}
                   <a style={{ cursor: "pointer" }} onClick={() => setAsOf("")}>
-                    reset
+                    zurücksetzen
                   </a>
                 </>
               )}

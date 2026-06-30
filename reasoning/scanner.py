@@ -313,8 +313,13 @@ def _build_client() -> Any:
 
 
 async def _reason(client: Any, candidate: Candidate, insight_type: str) -> list[dict[str, Any]]:
+    from datetime import date
+
     template = INEFFICIENCY_PROMPT if insight_type == "inefficiency" else SYNERGY_PROMPT
-    prompt = template.format(subgraph_json=format_subgraph(candidate.nodes, candidate.edges))
+    prompt = template.format(
+        subgraph_json=format_subgraph(candidate.nodes, candidate.edges),
+        today=date.today().isoformat(),
+    )
     message = client.messages.create(
         model=MODEL,
         max_tokens=2048,

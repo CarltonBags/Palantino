@@ -8,10 +8,10 @@ const SHAPE_LABEL: Record<string, string> = {
 };
 
 function dot(entry: SourceCatalogEntry): { color: string; title: string } {
-  if (!entry.enabled) return { color: "#6b7280", title: "disabled" };
-  if (!entry.last_run) return { color: "#6b7280", title: "never run" };
+  if (!entry.enabled) return { color: "#6b7280", title: "deaktiviert" };
+  if (!entry.last_run) return { color: "#6b7280", title: "nie gelaufen" };
   if (entry.last_run.status === "ok") return { color: "#4ade80", title: "ok" };
-  if (entry.last_run.status === "error") return { color: "#f87171", title: "error" };
+  if (entry.last_run.status === "error") return { color: "#f87171", title: "Fehler" };
   return { color: "#fbbf24", title: entry.last_run.status };
 }
 
@@ -30,7 +30,7 @@ export default function SourcesPanel() {
   return (
     <div className="section">
       <h3>
-        Sources ({runCount}/{items.length} ingested)
+        Quellen ({runCount}/{items.length} geladen)
       </h3>
       {items.map((s) => {
         const d = dot(s);
@@ -51,8 +51,8 @@ export default function SourcesPanel() {
               {s.last_run
                 ? ` · ${s.last_run.nodes_written}n/${s.last_run.edges_written}e`
                 : s.enabled
-                  ? " · never run"
-                  : " · disabled"}
+                  ? " · nie gelaufen"
+                  : " · deaktiviert"}
             </div>
           </div>
         );

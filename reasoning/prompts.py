@@ -22,14 +22,29 @@ Rules:
 - Return structured JSON: a list of insights, each with type, description, evidence (node/edge IDs),
   confidence (0-1), and a reasoning_trace.
 - confidence < 0.7: do not return.
+- Language: write every human-readable field (title, description, reasoning_trace)
+  in GERMAN. Keep the JSON keys and the "type" value (inefficiency/synergy) in
+  English; node/edge IDs stay verbatim.
 - Respond only with valid JSON. No prose outside the JSON object.
 """
 
 INEFFICIENCY_PROMPT = """\
+Current date: {today}.
+
 Analyze this subgraph for inefficiencies: cases where two or more civic actions
 conflict, duplicate effort, or produce waste (e.g., a road repaved the same month
 a council resolution approved a new bus route through it, or two overlapping tenders
 for the same street segment).
+
+IGNORE artifacts of how the graph stores data — these are NOT inefficiencies and
+must never be reported:
+  - a road represented as several segments (Abschnitte) sharing one
+    Straßenschlüssel — that is the normal segmented road model, not duplication;
+  - the same place existing as both a Stadtbezirk and a statistischer Bezirk with
+    the same name — those are two distinct administrative levels;
+  - multiple/parallel edges between the same two nodes.
+Report only real-world civic inefficiencies (conflicting or duplicated actions,
+wasted public effort), not quirks of the data representation.
 
 Subgraph:
 {subgraph_json}
@@ -49,9 +64,37 @@ Return JSON:
 """
 
 SYNERGY_PROMPT = """\
-Analyze this subgraph for synergies: cases where civic entities or decisions
-reinforce, benefit from, or enable each other in a positive way
-(e.g., a council resolution that directly enabled a tender awarded to a local company).
+Current date: {today}.
+
+Analyze this subgraph for POTENTIAL, not-yet-realized synergies — untapped
+opportunities the city has NOT acted on, where two or more civic facts COULD
+reinforce or benefit each other if someone coordinated them.
+
+Focus on latent potential, e.g.:
+  - many separate events at the same venue / date cluster that could be jointly
+    promoted or share logistics, security, transit (as partly seen at the
+    Westfalenhalle event cluster);
+  - a council initiative and a nearby business / POI / infrastructure that could
+    partner or be timed together;
+  - planned works that could be coordinated with an event or another project.
+
+Hard rules:
+  - TEMPORAL RELEVANCE (critical for events — they are time-sensitive): an
+    opportunity is only actionable if its parts are timely relative to the
+    current date and to each other. Use each node's valid_from. Do NOT pair a
+    years-old, already-concluded council item (e.g. a 2022 Antrag) with a
+    2026/2027 event and call it a live synergy — the idea may be sound but the
+    window has passed. If the gap between a concluded action and the event is
+    large (roughly > 1 year), or the action is clearly already finished, omit it
+    or set very low confidence.
+  - Do NOT report synergies that ALREADY exist or are already realized in the
+    data (e.g. a resolution that already enabled a tender, an edge that already
+    connects the two). Only surface opportunities that are NOT yet connected.
+  - You MUST validate each opportunity in reasoning_trace: state the concrete
+    mechanism by which it would create value, cite which facts in the subgraph
+    make the opportunity real and plausible, and what action would be required
+    to realize it. If you cannot justify genuine, actionable potential, omit it.
+  - Let confidence reflect how strong and actionable the unrealized potential is.
 
 Subgraph:
 {subgraph_json}

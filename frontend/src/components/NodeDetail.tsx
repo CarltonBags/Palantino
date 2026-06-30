@@ -57,7 +57,7 @@ export default function NodeDetail({ nodeId, onSelect }: Props) {
   }, [edges, nodeId]);
 
   if (err) return <div className="err">{err}</div>;
-  if (!node) return <div className="muted">Loading…</div>;
+  if (!node) return <div className="muted">Lädt…</div>;
 
   return (
     <div>
@@ -69,13 +69,13 @@ export default function NodeDetail({ nodeId, onSelect }: Props) {
 
       {node.valid_from && (
         <div className="kv">
-          <span className="k">when</span>
+          <span className="k">Wann</span>
           <span className="v">{formatWhen(node.valid_from)}</span>
         </div>
       )}
 
       <div className="section">
-        <h3>Properties</h3>
+        <h3>Eigenschaften</h3>
         {Object.entries(node.properties).map(([k, v]) => (
           <div className="kv" key={k}>
             <span className="k">{k}</span>
@@ -84,10 +84,10 @@ export default function NodeDetail({ nodeId, onSelect }: Props) {
         ))}
         {node.source_url && (
           <div className="kv">
-            <span className="k">source_url</span>
+            <span className="k">Quelle</span>
             <span className="v">
               <a href={node.source_url} target="_blank" rel="noreferrer">
-                open ↗
+                öffnen ↗
               </a>
             </span>
           </div>
@@ -96,14 +96,14 @@ export default function NodeDetail({ nodeId, onSelect }: Props) {
 
       {egoIds.length > 1 && (
         <div className="section">
-          <h3>Ego graph</h3>
+          <h3>Nachbarschaftsgraph</h3>
           <SubgraphView nodeIds={egoIds} focusId={nodeId} onSelect={onSelect} />
         </div>
       )}
 
       <div className="section">
-        <h3>Edges ({edges.length})</h3>
-        {edges.length === 0 && <div className="muted">No connected edges.</div>}
+        <h3>Kanten ({edges.length})</h3>
+        {edges.length === 0 && <div className="muted">Keine verbundenen Kanten.</div>}
         {edges.map((e) => {
           const otherId = e.from_node_id === nodeId ? e.to_node_id : e.from_node_id;
           const dir = e.from_node_id === nodeId ? "→" : "←";
@@ -113,7 +113,7 @@ export default function NodeDetail({ nodeId, onSelect }: Props) {
                 {dir} {e.edge_type}
                 {e.inferred ? " *" : ""}
               </span>
-              <button onClick={() => onSelect(otherId)}>open</button>
+              <button onClick={() => onSelect(otherId)}>öffnen</button>
             </div>
           );
         })}
@@ -121,7 +121,7 @@ export default function NodeDetail({ nodeId, onSelect }: Props) {
 
       {history.length > 1 && (
         <div className="section">
-          <h3>History ({history.length} versions)</h3>
+          <h3>Verlauf ({history.length} Versionen)</h3>
           {history.map((v, i) => (
             <div className="kv" key={v.id}>
               <span className="k">v{i + 1}</span>
@@ -135,21 +135,21 @@ export default function NodeDetail({ nodeId, onSelect }: Props) {
       )}
 
       <div className="section">
-        <h3>Reason over subgraph</h3>
+        <h3>Subgraph analysieren</h3>
         <div className="row">
           <button onClick={() => explain("inefficiency")} disabled={busy}>
-            Find inefficiencies
+            Ineffizienzen finden
           </button>
           <button onClick={() => explain("synergy")} disabled={busy}>
-            Find synergies
+            Synergien finden
           </button>
         </div>
-        {busy && <div className="muted">Querying reasoning layer…</div>}
+        {busy && <div className="muted">Analyse läuft…</div>}
         {insight?.insights?.map((it, i) => (
           <div className="insight" key={i}>
             <div className="it">{it.title}</div>
             <div>{it.description}</div>
-            <div className="muted">confidence {Math.round((it.confidence ?? 0) * 100)}%</div>
+            <div className="muted">Konfidenz {Math.round((it.confidence ?? 0) * 100)}%</div>
           </div>
         ))}
         {insight && !insight.insights && (
