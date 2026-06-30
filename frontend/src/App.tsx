@@ -7,6 +7,11 @@ import IngestionStatus from "./components/IngestionStatus";
 
 const EMPTY: GeoJSON.FeatureCollection = { type: "FeatureCollection", features: [] };
 
+// Sources kept in the graph/data but hidden from the map to cut clutter. The
+// ratswahl precinct results are one Event point per polling station (~hundreds,
+// densely overlapping) and add no spatial insight on the map.
+const MAP_HIDDEN_SOURCES = new Set(["opendata_dortmund_wahl_stimmbezirk"]);
+
 export default function App() {
   const [activeTypes, setActiveTypes] = useState<Set<string>>(
     () => new Set(GEO_NODE_TYPES.map((t) => t.type)),
@@ -69,10 +74,12 @@ export default function App() {
       const fc = byType[t];
       if (!fc) return [];
       const color = COLOR_BY_TYPE[t] ?? "#2dd4bf";
-      return fc.features.map((f) => ({
-        ...f,
-        properties: { ...f.properties, color },
-      }));
+      return fc.features
+        .filter((f) => !MAP_HIDDEN_SOURCES.has(String((f.properties as { source?: string })?.source ?? "")))
+        .map((f) => ({
+          ...f,
+          properties: { ...f.properties, color },
+        }));
     });
     return { type: "FeatureCollection", features };
   }, [activeTypes, byType]);

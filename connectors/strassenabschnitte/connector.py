@@ -29,8 +29,12 @@ from ontology.nodes import NodeBase, Road
 _BASE = settings.opendata_dortmund_base_url
 _DATASET = "fb62-strassenabschnitte"
 _SOURCE_URL = f"https://open-data.dortmund.de/explore/dataset/{_DATASET}/"
-_RECORDS_URL = f"{_BASE}/catalog/datasets/{_DATASET}/records"
-_PAGE_SIZE = 100
+# Export endpoint, NOT paginated /records: ODS v2.1 hard-caps offset+limit at
+# 10000, but this dataset has ~19.5k segments, so /records can never reach them
+# all (and crashes with InvalidRESTParameterError at offset=10000). exports/json
+# streams the full set uncapped. limit=-1 => every row.
+_EXPORT_URL = f"{_BASE}/catalog/datasets/{_DATASET}/exports/json"
+_EXPORT_TIMEOUT = 180.0
 
 
 def _to_int(value: Any) -> int | None:
@@ -55,15 +59,9 @@ class StrassenabschnitteConnector(BaseConnector):
     source_name = "opendata_dortmund_strassenabschnitte"
 
     async def fetch(self, checkpoint: dict[str, Any] | None = None) -> AsyncGenerator[Any, None]:
-        offset = 0
-        while True:
-            resp = await self._get(_RECORDS_URL, params={"limit": _PAGE_SIZE, "offset": offset})
-            data = resp.json()
-            for record in data.get("results", []):
-                yield record
-            if offset + _PAGE_SIZE >= data.get("total_count", 0):
-                break
-            offset += _PAGE_SIZE
+        resp = await self._get(_EXPORT_URL, params={"limit": -1}, timeout=_EXPORT_TIMEOUT)
+        for record in resp.json():
+            yield record
 
     def normalize(self, raw: dict[str, Any]) -> dict[str, Any]:
         name = raw.get("strassenname") or "Unbenannter Abschnitt"

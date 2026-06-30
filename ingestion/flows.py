@@ -311,8 +311,8 @@ async def _locate_pois_in_geo_areas(poi_nodes: list) -> int:
         )
         for row in rows:
             edge = located_in_edge(
-                from_node_id=UUID(row["poi_id"]),
-                to_node_id=UUID(row["geo_id"]),
+                from_node_id=UUID(str(row["poi_id"])),
+                to_node_id=UUID(str(row["geo_id"])),
                 source="osm_overpass",
                 observed_at=datetime.utcnow(),
             )
@@ -392,7 +392,83 @@ async def run_wahlergebnisse() -> None:
 
 @flow(name="dortmund-events", log_prints=True)
 async def run_dortmund_events() -> None:
-    await _run_node_connector(DortmundEventsConnector(), get_run_logger())
+    log = get_run_logger()
+    connector = DortmundEventsConnector()
+    run_id = await _start_run(connector.source_name)
+    nodes_written = edges_written = 0
+    try:
+        async with connector:
+            async for raw in connector.fetch():
+                normalized = connector.normalize(raw)
+                for node in await connector.emit_entities(normalized):
+                    await upsert_node(node)
+                    nodes_written += 1
+        # Most events carry a venue Point, so snap them to their statistischer
+        # Bezirk by ST_Within (precise). For the few without coords, fall back to
+        # the coarse Stadtbezirk tag — a source fact.
+        edges_written += await _locate_nodes_in_geo_areas(
+            "Event", connector.source_name, source_filter=connector.source_name
+        )
+        edges_written += await _link_events_to_bezirke(connector.source_name)
+        log.info("dortmund-events done: %d nodes, %d edges", nodes_written, edges_written)
+        await _finish_run(run_id, connector.source_name, nodes_written, edges_written)
+    except Exception as exc:
+        log.error("dortmund-events failed: %s", exc, exc_info=True)
+        await _finish_run(run_id, connector.source_name, nodes_written, edges_written, error=str(exc))
+        raise
+
+
+async def _link_events_to_bezirke(source: str) -> int:
+    """
+    LOCATED_IN: each Event → the GeoArea named in its `stadtbezirk` property.
+    The dortmund.de calendar gives the district explicitly (a source fact, so
+    inferred=False), so we join on the name instead of geocoding the venue text.
+    Matches stadtbezirk first, then statistischer_bezirk (e.g. 'Dorstfeld').
+    """
+    from uuid import UUID
+
+    from ontology.edges import located_in
+
+    written = 0
+    async with get_conn() as conn:
+        rows = await conn.fetch(
+            """
+            WITH best AS (
+                SELECT DISTINCT ON (n.id) n.id AS event_id, g.id AS geo_id
+                FROM nodes n
+                JOIN nodes g ON g.node_type = 'GeoArea'
+                    AND g.properties->>'area_type' IN ('stadtbezirk', 'statistischer_bezirk')
+                    AND lower(g.label) = lower(n.properties->>'stadtbezirk')
+                    AND g.valid_to IS NULL
+                WHERE n.node_type = 'Event' AND n.source = $1 AND n.valid_to IS NULL
+                  AND n.properties->>'stadtbezirk' IS NOT NULL
+                -- The tag is Stadtbezirk-granularity: prefer the stadtbezirk
+                -- match, fall back to a same-named statistischer Bezirk (e.g.
+                -- 'Dorstfeld') only when no Stadtbezirk carries that name.
+                ORDER BY n.id, (g.properties->>'area_type' = 'stadtbezirk') DESC
+            )
+            SELECT event_id, geo_id FROM best b
+            -- Fallback only: skip events already located by the point ST_Within
+            -- pass (any existing LOCATED_IN), so coord-bearing events aren't
+            -- double-linked at two district granularities.
+            WHERE NOT EXISTS (
+                SELECT 1 FROM edges e
+                WHERE e.edge_type = 'LOCATED_IN' AND e.from_node_id = b.event_id
+                  AND e.valid_to IS NULL
+            )
+            """,
+            source,
+        )
+        for row in rows:
+            edge = located_in(
+                from_node_id=UUID(str(row["event_id"])),
+                to_node_id=UUID(str(row["geo_id"])),
+                source=source,
+                observed_at=datetime.now(timezone.utc),
+            )
+            await upsert_edge(edge)
+            written += 1
+    return written
 
 
 # ── Spatially-located node connectors (POI + construction sites) ──────────────
@@ -575,8 +651,8 @@ async def _locate_nodes_in_geo_areas(
         )
         for row in rows:
             edge = located_in_edge(
-                from_node_id=UUID(row["child_id"]),
-                to_node_id=UUID(row["geo_id"]),
+                from_node_id=UUID(str(row["child_id"])),
+                to_node_id=UUID(str(row["geo_id"])),
                 source=source,
                 observed_at=datetime.now(timezone.utc),
             )
@@ -635,8 +711,8 @@ async def _link_roads_to_bezirke(source: str) -> int:
         )
         for row in rows:
             edge = part_of(
-                child_id=UUID(row["road_id"]),
-                parent_id=UUID(row["geo_id"]),
+                child_id=UUID(str(row["road_id"])),
+                parent_id=UUID(str(row["geo_id"])),
                 source=source,
                 observed_at=datetime.now(timezone.utc),
             )
@@ -660,6 +736,8 @@ async def run_strassenabschnitte() -> None:
                 for node in await connector.emit_entities(normalized):
                     await upsert_node(node)
                     nodes_written += 1
+                    if nodes_written % 2000 == 0:
+                        log.info("strassenabschnitte: %d segments ingested…", nodes_written)
         edges_written += await _link_segments_to_streets(connector.source_name)
         edges_written += await _locate_nodes_in_geo_areas(
             "Road", connector.source_name, source_filter=connector.source_name
@@ -700,8 +778,8 @@ async def _link_segments_to_streets(source: str) -> int:
         )
         for row in rows:
             edge = part_of(
-                child_id=UUID(row["seg_id"]),
-                parent_id=UUID(row["street_id"]),
+                child_id=UUID(str(row["seg_id"])),
+                parent_id=UUID(str(row["street_id"])),
                 source=source,
                 observed_at=datetime.now(timezone.utc),
             )
@@ -783,7 +861,11 @@ if __name__ == "__main__":
         run_brightsky.to_deployment(name="brightsky-hourly", cron="5 * * * *"),
         run_lanuv_air.to_deployment(name="lanuv-air-hourly", cron="15 * * * *"),
         run_polizei_rss.to_deployment(name="polizei-rss-hourly", cron="25 * * * *"),
-        run_gtfs_realtime.to_deployment(name="gtfs-realtime-10min", cron="*/10 * * * *"),
+        # gtfs_realtime disabled: the gtfs.de feed is Germany-wide (~59k entities
+        # per poll, no city filter), which floods the DB and drops the Supabase
+        # connection. Re-enable only after ingesting gtfs_static and filtering
+        # realtime to Dortmund route_ids.
+        # run_gtfs_realtime.to_deployment(name="gtfs-realtime-10min", cron="*/10 * * * *"),
         # resolution + reasoning — after the daily ingests settle
         run_text_linking.to_deployment(name="text-linking-daily", cron="30 7 * * *"),
         run_insight_scan.to_deployment(name="insight-scan-daily", cron="0 8 * * *"),

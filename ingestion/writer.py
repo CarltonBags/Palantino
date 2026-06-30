@@ -106,12 +106,23 @@ async def upsert_edge(edge: EdgeBase) -> tuple[str, bool]:
                 "SELECT id FROM edges WHERE source = $1 AND source_id = $2 AND valid_to IS NULL",
                 edge.source, edge.source_id,
             )
-            if existing:
-                await conn.execute(
-                    "UPDATE edges SET observed_at = $1 WHERE id = $2",
-                    now, existing["id"],
-                )
-                return str(existing["id"]), False
+        else:
+            # No source_id: dedup on the structural identity (type, endpoints,
+            # source). Graph edges like PART_OF / LOCATED_IN / RELATES_TO are
+            # unique per (type, from, to) within a source, so re-running a
+            # connector or flow must not pile up duplicate copies.
+            existing = await conn.fetchrow(
+                "SELECT id FROM edges WHERE edge_type = $1 AND from_node_id = $2 "
+                "AND to_node_id = $3 AND source = $4 AND source_id IS NULL "
+                "AND valid_to IS NULL",
+                edge.edge_type, str(edge.from_node_id), str(edge.to_node_id), edge.source,
+            )
+        if existing:
+            await conn.execute(
+                "UPDATE edges SET observed_at = $1 WHERE id = $2",
+                now, existing["id"],
+            )
+            return str(existing["id"]), False
 
         row = await conn.fetchrow(
             """
