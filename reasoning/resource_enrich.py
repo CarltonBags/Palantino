@@ -8,7 +8,7 @@ import json
 import logging
 
 from db.session import get_conn
-from reasoning.llm import complete, fast_model
+from reasoning.llm import complete
 from reasoning.prompts import RESOURCE_TAG_PROMPT, RESOURCE_TAG_SYSTEM
 from reasoning.resources import RESOURCES, poi_resources
 
@@ -86,7 +86,7 @@ async def enrich_events(limit: int = 200) -> int:
             description=(props.get("description") or "")[:600],
         )
         try:
-            raw = await complete(RESOURCE_TAG_SYSTEM, prompt, max_tokens=1500, model=fast_model())
+            raw = await complete(RESOURCE_TAG_SYSTEM, prompt, max_tokens=4000)  # main model
         except Exception as exc:
             logger.warning("event tag failed for %s: %s", e["id"], exc)
             continue
