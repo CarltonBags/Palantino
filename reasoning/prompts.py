@@ -196,7 +196,12 @@ denen zwei Vorgänge/Akteure sich gegenseitig verstärken könnten, wenn jemand 
 koordinierte. Nur ECHTES, zeitlich aktuelles Potenzial (keine bereits realisierten
 Verbindungen, keine Jahre alten, abgeschlossenen Vorgänge). Bündle keine Events
 desselben kommerziellen Veranstaltungsorts miteinander. Begründe je Gelegenheit
-den Mechanismus und was zur Umsetzung nötig wäre.""",
+den Mechanismus und was zur Umsetzung nötig wäre.
+- ANSPRECHPARTNER: Wenn zu den beteiligten Akteuren in den Fakten Kontaktdaten
+  vorliegen (Eigenschaften contact_email / contact_phone / contact_website / email
+  / phone / website), nenne sie je Akteur als konkrete Kontaktmöglichkeit, um die
+  Synergie vorzuschlagen. Erfinde KEINE Kontaktdaten; nenne nur die, die in den
+  Fakten stehen, und nur geschäftliche/institutionelle Kontakte.""",
     "scandal": _ANALYSIS_BASE + """
 
 Aufgabe: DECKE NICHT-OFFENSICHTLICHE, potenzielle Auffälligkeiten auf, die eine

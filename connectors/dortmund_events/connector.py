@@ -113,6 +113,14 @@ def parse_event(source: dict[str, Any]) -> dict[str, Any] | None:
     if not _in_dortmund(lng, lat):
         lat = lng = None
 
+    # Venue/organiser contact (public institution contact, not private persons).
+    def _first(items: Any, key: str) -> Any:
+        for it in items or []:
+            v = (it.get("content") or {}).get(key)
+            if v:
+                return v
+        return None
+
     return {
         "source_id": source.get("id"),
         "title": title,
@@ -122,6 +130,9 @@ def parse_event(source: dict[str, Any]) -> dict[str, Any] | None:
         "venue": loc.get("title"),
         "street": " ".join(p for p in (loc.get("street"), loc.get("houseNumber")) if p) or None,
         "postcode": loc.get("postcode"),
+        "contact_email": _first(loc.get("emails"), "email"),
+        "contact_phone": _first(loc.get("telephoneNumbers"), "phonenumber"),
+        "contact_website": _first(loc.get("websites"), "reference"),
         "lat": lat,
         "lng": lng,
         "start_datetime": data.get("startDateTime") or (data.get("startCalendarDay") or {}).get("date"),
@@ -182,6 +193,9 @@ class DortmundEventsConnector(BaseConnector):
                 "venue": normalized.get("venue"),
                 "street": normalized.get("street"),
                 "postcode": normalized.get("postcode"),
+                "contact_email": normalized.get("contact_email"),
+                "contact_phone": normalized.get("contact_phone"),
+                "contact_website": normalized.get("contact_website"),
                 "description": normalized.get("description"),
                 "is_cancelled": normalized.get("is_cancelled"),
                 "is_sold_out": normalized.get("is_sold_out"),
