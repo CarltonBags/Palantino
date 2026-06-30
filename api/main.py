@@ -566,9 +566,9 @@ async def list_stored_insights(
     async with get_conn() as conn:
         rows = await conn.fetch(
             f"""
-            SELECT id, insight_type, title, description, confidence,
-                   evidence_node_ids, reasoning_trace, model, generator,
-                   status, created_at
+            SELECT id::text AS id, insight_type, title, description, confidence,
+                   evidence_node_ids::text[] AS evidence_node_ids,
+                   reasoning_trace, model, generator, status, created_at
             FROM insights WHERE {where}
             ORDER BY confidence DESC, created_at DESC
             LIMIT ${len(params)}
