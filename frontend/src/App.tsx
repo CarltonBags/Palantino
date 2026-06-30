@@ -24,7 +24,7 @@ export default function App() {
   const [showRoads, setShowRoads] = useState(true);
   const [asOf, setAsOf] = useState<string>(""); // "" = current
   const [selectedId, setSelectedId] = useState<string | null>(null);
-  const [view, setView] = useState<"map" | "chat" | "history">("map");
+  const [view, setView] = useState<"map" | "chat" | "history" | "leads">("map");
 
   // Changing the as-of instant invalidates all cached point layers.
   useEffect(() => {
@@ -107,10 +107,30 @@ export default function App() {
         <button className={view === "history" ? "active" : ""} onClick={() => setView("history")}>
           Verlauf
         </button>
+        <button className={view === "leads" ? "active" : ""} onClick={() => setView("leads")}>
+          Akquise
+        </button>
       </div>
 
       {view === "chat" ? (
         <ChatView
+          onOpenNode={(id) => {
+            setSelectedId(id);
+            setView("map");
+          }}
+        />
+      ) : view === "leads" ? (
+        <ChatView
+          lens="leads"
+          title="byzerolab — Akquise"
+          subtitle="Finde lokale Unternehmen, Vereine und Einrichtungen, die Kund:innen für KI-Workflow-Integration sein könnten — mit Ansatz und Kontakt."
+          examples={[
+            "Welche Einzelhändler in der Nordstadt könnten von KI-Workflows profitieren?",
+            "Welche Vereine oder sozialen Einrichtungen wären gute Beratungskund:innen?",
+            "Welche Veranstalter mit viel Organisationsaufwand wären Interessenten?",
+            "Welche Einrichtungen mit viel manueller Verwaltung gibt es?",
+          ]}
+          showEventPicker={false}
           onOpenNode={(id) => {
             setSelectedId(id);
             setView("map");

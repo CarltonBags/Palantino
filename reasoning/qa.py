@@ -33,7 +33,7 @@ from reasoning.prompts import (
     format_subgraph,
 )
 
-_LENSES = {"factual", "synergy", "inefficiency", "scandal", "crime"}
+_LENSES = {"factual", "synergy", "inefficiency", "scandal", "crime", "leads"}
 
 logger = logging.getLogger(__name__)
 
@@ -259,13 +259,16 @@ def _intent_out(intent: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-async def answer_question(question: str, k: int = 24) -> dict[str, Any]:
-    """Answer a natural-language question from the most relevant graph facts."""
+async def answer_question(question: str, k: int = 24, lens_override: str | None = None) -> dict[str, Any]:
+    """Answer a question from the most relevant graph facts. lens_override forces
+    a lens (e.g. the dedicated leads window) instead of auto-detecting it."""
     question = (question or "").strip()
     if not question:
         return {"answer": "Bitte eine Frage eingeben.", "citations": [], "intent": {}}
 
     intent = await extract_intent(question)
+    if lens_override in _LENSES:
+        intent["lens"] = lens_override
     # Enumeration only makes sense for factual "list all X" queries; analytical
     # lenses always want the focused + graph-expanded subgraph, never a dump.
     list_mode = bool(intent["list"]) and intent["lens"] == "factual"

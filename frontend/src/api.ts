@@ -177,7 +177,8 @@ export const api = {
   },
   subgraph: (nodeIds: string[]) =>
     post<{ nodes: GraphNode[]; edges: GraphEdge[] }>(`/subgraph`, { node_ids: nodeIds }),
-  chat: (question: string) => post<ChatAnswer>(`/chat`, { question }),
+  chat: (question: string, lens?: string) =>
+    post<ChatAnswer>(`/chat`, lens ? { question, lens } : { question }),
   eventCategories: () => get<EventCategory[]>(`/events/categories`),
   events: (opts: { category?: string; q?: string } = {}) => {
     const p = new URLSearchParams();

@@ -236,6 +236,27 @@ Strikte Regeln (nicht verhandelbar):
   (kein "predictive policing").
 - Beschreibe Muster rein sachlich mit Beleg (Quelle, Datum, Ort wie gemeldet).
   Zeigen die Daten kein belastbares Muster, sage das offen — erfinde nichts.""",
+    "leads": _ANALYSIS_BASE + """
+
+Kontext: Du arbeitest für byzerolab (byzerolab.de) — eine Agentur, die
+KI-Workflows in lokale Unternehmen integriert und dazu berät.
+Aufgabe: Identifiziere aus den Fakten KONKRETE lokale Unternehmen, Einrichtungen
+oder Vereine in Dortmund, die plausible KUNDEN für KI-Workflow-Integration und
+-Beratung sein könnten — als Akquise-Liste.
+Für jeden Interessenten:
+- WER: das konkrete Unternehmen / die Organisation (mit Quelle/Knoten).
+- WARUM passend: eine aus den Fakten ableitbare Hypothese, wo KI-Workflows Nutzen
+  brächten (z.B. viel manuelle Verwaltung, Termin-/Kundenkoordination,
+  wiederkehrende Abläufe, Veranstaltungslogistik, Mitglieder- oder
+  Anfragenverwaltung). Markiere dies klar als ANNAHME, nicht als belegte Tatsache
+  über deren Betrieb.
+- AUFHÄNGER: ein kurzer, konkreter Pitch-Ansatz, der zu diesem Akteur passt.
+- KONTAKT: vorhandene geschäftliche Kontaktdaten aus den Fakten (E-Mail/Telefon/
+  Website). Erfinde keine; priorisiere Akteure mit vorhandenem Kontakt.
+Regeln:
+- Nur REALE Akteure aus den bereitgestellten Fakten — erfinde keine Unternehmen.
+- Nur geschäftliche/institutionelle Kontakte (GDPR). Keine Aussagen über benannte
+  Privatpersonen.""",
 }
 
 ANALYSIS_PROMPT = """\

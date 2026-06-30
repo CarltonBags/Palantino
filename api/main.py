@@ -306,6 +306,7 @@ async def get_insights(req: InsightRequest) -> dict[str, Any]:
 class ChatRequest(BaseModel):
     question: str
     k: int = 24
+    lens: str | None = None  # force a lens (e.g. the leads window); else auto-detect
 
 
 @app.post("/chat")
@@ -321,7 +322,7 @@ async def chat(req: ChatRequest) -> dict[str, Any]:
     from reasoning.llm import active_model
     from reasoning.qa import answer_question
 
-    result = await answer_question(req.question, k=min(max(req.k, 4), 48))
+    result = await answer_question(req.question, k=min(max(req.k, 4), 48), lens_override=req.lens)
     intent = result.get("intent") or {}
     async with get_conn() as conn:
         row = await conn.fetchrow(
