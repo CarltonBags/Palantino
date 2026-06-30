@@ -326,3 +326,10 @@ a { color: var(--accent); }
 .followup-input { display: flex; gap: 6px; margin-top: 4px; }
 .followup-input input { font-size: 13px; }
 .followup-input button { padding: 7px 14px; flex: 0 0 auto; }
+
+/* top-level insights cards */
+.insight-card {
+  background: var(--panel); border: 1px solid var(--border); border-radius: 12px;
+  padding: 14px 16px; margin-bottom: 12px;
+}
+.insight-card .it { font-weight: 700; }

@@ -216,6 +216,7 @@ export const api = {
   },
   setInsightStatus: (id: string, status: "confirmed" | "dismissed" | "new") =>
     post<{ id: string; status: string }>(`/insights/stored/${id}/status`, { status }),
+  scanInsights: () => post<{ status: string }>(`/insights/scan`, {}),
   ingestionStatus: () => get<IngestionRun[]>(`/status/ingestion`),
   sourceCatalog: () => get<SourceCatalogEntry[]>(`/status/sources`),
   resolutionCandidates: (status = "pending") =>

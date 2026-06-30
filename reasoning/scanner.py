@@ -405,8 +405,11 @@ async def _persist(candidate: Candidate, insight_type: str, insight: dict[str, A
     return result.endswith("1")
 
 
-async def scan(insight_types: tuple[str, ...] = ("inefficiency", "synergy")) -> dict[str, int]:
-    """Generate candidates, reason over each, persist high-confidence insights."""
+async def scan(
+    insight_types: tuple[str, ...] = ("inefficiency", "synergy"), limit: int = 50
+) -> dict[str, int]:
+    """Generate candidates, reason over each, persist high-confidence insights.
+    `limit` caps candidates per generator — keep it small for on-demand scans."""
     key = settings.deepseek_api_key if settings.llm_provider == "deepseek" else settings.anthropic_api_key
     if not key:
         raise RuntimeError(
@@ -414,13 +417,13 @@ async def scan(insight_types: tuple[str, ...] = ("inefficiency", "synergy")) -> 
         )
 
     candidates = dedup_candidates(
-        await spatial_temporal_candidates()
-        + await area_bridge_candidates()
-        + await ego_network_candidates()
+        await spatial_temporal_candidates(limit=limit)
+        + await area_bridge_candidates(limit=limit)
+        + await ego_network_candidates(limit=limit)
     )
     # News-context candidates run through synergy only (they surface creative
     # news→event/place connections, not inefficiencies).
-    news_candidates = dedup_candidates(await news_context_candidates())
+    news_candidates = dedup_candidates(await news_context_candidates(news_limit=limit))
     logger.info(
         "insight scan: %d candidate subgraphs + %d news-context (deduped)",
         len(candidates), len(news_candidates),
