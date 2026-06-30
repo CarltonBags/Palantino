@@ -181,6 +181,8 @@ Gib NUR dieses JSON zurück:
 {{
   "search_text": "<knappe Suchphrase auf Deutsch, auf die Kernabsicht fokussiert; behalte Eigennamen, Stadtteile und Themen, entferne Füllwörter>",
   "node_types": [<0 oder mehr aus: "AgendaItem","Resolution","Meeting","Event","Tender","POI","Organization","Road","GeoArea">],
+  "category": "<Veranstaltungskategorie falls genannt, z.B. "Konzert", "Ausstellung", "Führung", "Wochenmarkt", "Kabarett"; sonst null>",
+  "list": <true wenn die Frage eine Aufzählung/Liste aller Treffer will, sonst false>,
   "date_from": "<YYYY-MM-DD oder null>",
   "date_to": "<YYYY-MM-DD oder null>"
 }}
@@ -188,10 +190,16 @@ Gib NUR dieses JSON zurück:
 Regeln:
 - node_types nur setzen, wenn die Frage klar einen Typ meint:
   Ratsbeschlüsse/Anträge -> ["Resolution","AgendaItem"]; Sitzungen -> ["Meeting"];
-  Veranstaltungen/Events/Nachrichten -> ["Event"]; Ausschreibungen/Vergaben -> ["Tender"];
-  Geschäfte/Orte/Einrichtungen -> ["POI"]; Firmen/Organisationen -> ["Organization"];
-  Straßen -> ["Road"]. Sonst [].
+  Veranstaltungen/Events/Konzerte/Nachrichten -> ["Event"]; Ausschreibungen -> ["Tender"];
+  Geschäfte/Orte/Einrichtungen -> ["POI"]; Firmen -> ["Organization"]; Straßen -> ["Road"].
+  Sonst [].
+- category nur bei Veranstaltungsfragen (z.B. "Konzerte" -> "Konzert", "Ausstellungen"
+  -> "Ausstellung"). Sonst null.
+- list = true, wenn nach einer Aufzählung/Liste gefragt wird ("welche", "alle", "was
+  gibt es", "was läuft", "zeig mir") — dann werden ALLE passenden Treffer chronologisch
+  zurückgegeben statt nur der ähnlichsten. Sonst false (analytische/erklärende Frage).
 - Datumsbereich nur bei klarer Zeitangabe (z.B. "2023" -> 2023-01-01 bis 2023-12-31,
-  "seit 2022" -> 2022-01-01 bis null). Sonst beide null.
+  "nächstes Wochenende", "im Juli", "seit 2022"). Berechne konkrete Daten relativ zum
+  heutigen Datum. Sonst beide null.
 - search_text immer ausfüllen. Nur valides JSON, kein weiterer Text.
 """

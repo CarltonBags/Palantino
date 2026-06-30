@@ -83,61 +83,96 @@ async def extract_intent(question: str) -> dict[str, Any]:
     data = _loads(raw)
     search_text = str(data.get("search_text") or "").strip() or question
     node_types = [t for t in (data.get("node_types") or []) if t in _VALID_NODE_TYPES]
+    category = str(data.get("category")).strip() if data.get("category") else None
     return {
         "search_text": search_text,
         "node_types": node_types,
+        "category": category,
+        "list": bool(data.get("list")),
         "date_from": _valid_date(data.get("date_from")),
         "date_to": _valid_date(data.get("date_to")),
     }
 
 
-async def _knn(conn: Any, lit: str, intent: dict[str, Any], k: int, use_filters: bool) -> list:
+async def _retrieve(
+    conn: Any, lit: str, intent: dict[str, Any], k: int, use_filters: bool, list_mode: bool
+) -> list:
+    """
+    list_mode=False: semantic KNN (rank by similarity) — for analytical questions.
+    list_mode=True: structured enumeration (filter + chronological) — for "list all
+    X" questions, where similarity top-k would drop most matches.
+    """
     filters = ["n.valid_to IS NULL"]
-    params: list[Any] = [lit]
+    params: list[Any] = [] if list_mode else [lit]  # $1 = query vector (semantic only)
+
+    def add(value: Any) -> str:
+        params.append(value)
+        return f"${len(params)}"
+
     if use_filters and intent["node_types"]:
-        params.append(intent["node_types"])
-        filters.append(f"n.node_type = ANY(${len(params)}::text[])")
+        filters.append(f"n.node_type = ANY({add(intent['node_types'])}::text[])")
+    if use_filters and intent.get("category"):
+        filters.append(f"n.properties->>'category' ILIKE {add('%' + intent['category'] + '%')}")
     if use_filters and intent["date_from"]:
-        params.append(intent["date_from"])
-        filters.append(f"n.valid_from >= ${len(params)}")
+        filters.append(f"n.valid_from >= {add(intent['date_from'])}")
     if use_filters and intent["date_to"]:
-        params.append(intent["date_to"])
-        filters.append(f"n.valid_from <= ${len(params)}")
-    params.append(k)
+        # day-inclusive: a date_to of 2026-07-05 must include events all day on the 5th
+        filters.append(f"n.valid_from < ({add(intent['date_to'])}::date + INTERVAL '1 day')")
+    limit_ph = add(k)
+    order = "n.valid_from ASC NULLS LAST" if list_mode else "e.embedding <=> $1::vector"
     return await conn.fetch(
         f"""
         SELECT n.id, n.node_type, n.label, n.properties, n.source, n.source_url, n.valid_from
         FROM node_embeddings e
         JOIN nodes n ON n.id = e.node_id
         WHERE {' AND '.join(filters)}
-        ORDER BY e.embedding <=> $1::vector
-        LIMIT ${len(params)}
+        ORDER BY {order}
+        LIMIT {limit_ph}
         """,
         *params,
     )
 
 
+def _intent_out(intent: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "search_text": intent["search_text"],
+        "node_types": intent["node_types"],
+        "category": intent.get("category"),
+        "list": bool(intent.get("list")),
+        "date_from": intent["date_from"].isoformat() if intent["date_from"] else None,
+        "date_to": intent["date_to"].isoformat() if intent["date_to"] else None,
+    }
+
+
 async def answer_question(question: str, k: int = 24) -> dict[str, Any]:
-    """Answer a natural-language question from the k most relevant graph facts."""
+    """Answer a natural-language question from the most relevant graph facts."""
     question = (question or "").strip()
     if not question:
         return {"answer": "Bitte eine Frage eingeben.", "citations": [], "intent": {}}
 
     intent = await extract_intent(question)
+    list_mode = bool(intent["list"])
+    # "List all events" without an explicit date → default to upcoming (today on).
+    if list_mode and not intent["date_from"] and (intent["category"] or "Event" in intent["node_types"]):
+        intent["date_from"] = date.today()
+
     qvec = (await embed_texts([intent["search_text"]]))[0]
     lit = to_pgvector(qvec)
 
-    has_filters = bool(intent["node_types"] or intent["date_from"] or intent["date_to"])
+    has_filters = bool(
+        intent["node_types"] or intent["category"] or intent["date_from"] or intent["date_to"]
+    )
+    k_eff = 60 if list_mode else k  # enumeration needs room; analysis stays tight
     async with get_conn() as conn:
-        nodes = await _knn(conn, lit, intent, k, use_filters=has_filters)
-        # If filters were too narrow and found nothing, retry unfiltered.
+        nodes = await _retrieve(conn, lit, intent, k_eff, use_filters=has_filters, list_mode=list_mode)
+        # If filters were too narrow and found nothing, retry unfiltered + semantic.
         if not nodes and has_filters:
-            nodes = await _knn(conn, lit, intent, k, use_filters=False)
+            nodes = await _retrieve(conn, lit, intent, k_eff, use_filters=False, list_mode=False)
         if not nodes:
             return {
                 "answer": "Dazu liegen im Wissensgraphen keine passenden Fakten vor.",
                 "citations": [],
-                "intent": intent,
+                "intent": _intent_out(intent),
             }
         ids = [str(n["id"]) for n in nodes]
         edges = await conn.fetch(
@@ -168,9 +203,4 @@ async def answer_question(question: str, k: int = 24) -> dict[str, Any]:
         }
         for n in nodes
     ]
-    return {"answer": answer, "citations": citations, "intent": {
-        "search_text": intent["search_text"],
-        "node_types": intent["node_types"],
-        "date_from": intent["date_from"].isoformat() if intent["date_from"] else None,
-        "date_to": intent["date_to"].isoformat() if intent["date_to"] else None,
-    }}
+    return {"answer": answer, "citations": citations, "intent": _intent_out(intent)}
