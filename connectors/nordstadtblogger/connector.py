@@ -102,9 +102,9 @@ class NordstadtbloggerConnector(BaseConnector):
                 try:
                     resp = await self._get(_API_URL, params={**params, "page": page})
                 except Exception:
-                    # A transient WP error on one page shouldn't abort a 160-page
-                    # archive walk — stop gracefully and keep what we have.
-                    break
+                    # A transient error on one page shouldn't lose the rest of a
+                    # ~160-page archive walk — skip just this page and continue.
+                    continue
             posts = resp.json()
             if not isinstance(posts, list) or not posts:
                 break

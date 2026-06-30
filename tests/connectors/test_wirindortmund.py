@@ -1,23 +1,33 @@
-"""Frozen raw → normalized tests for the Wir-in-Dortmund RSS connector. No network."""
+"""Frozen raw → normalized tests for the Wir-in-Dortmund WP-REST connector. No network."""
 
 import pytest
 
 from connectors.wirindortmund.connector import (
     WirInDortmundConnector,
+    _embedded_author,
+    _embedded_categories,
     _make_source_id,
-    _parse_pubdate,
+    _parse_wp_date,
     _strip_html,
 )
 from ontology.nodes import Event
 
 RAW = {
-    "guid": "https://www.wirindortmund.de/?p=311613",
-    "title": "Das ist &#8222;Dortmunder Tatendrang&#8220;: 35 Projekte",
+    "id": 311613,
+    "date_gmt": "2026-06-30T09:28:55",
     "link": "https://www.wirindortmund.de/dortmund/das-ist-dortmunder-tatendrang/",
-    "description": "<p>Rund 35 <b>Projekte</b> in Hörde …</p>",
-    "pubDate": "Tue, 30 Jun 2026 09:28:55 +0000",
-    "creator": "Wir in Dortmund (SK)",
-    "categories": ["Dortmund", "Hörde", "Startseite", "Tatendrang"],
+    "title": {"rendered": "Das ist &#8222;Dortmunder Tatendrang&#8220;: 35 Projekte"},
+    "excerpt": {"rendered": "<p>Rund 35 <b>Projekte</b> in Hörde …</p>"},
+    "_embedded": {
+        "author": [{"name": "Wir in Dortmund (SK)"}],
+        "wp:term": [
+            [
+                {"taxonomy": "category", "name": "Dortmund"},
+                {"taxonomy": "category", "name": "Hörde"},
+                {"taxonomy": "category", "name": "Startseite"},
+            ],
+        ],
+    },
 }
 
 
@@ -31,23 +41,28 @@ def test_strip_html_unescapes() -> None:
 
 
 def test_source_id_deterministic() -> None:
-    assert _make_source_id("a") == _make_source_id("a")
-    assert _make_source_id("a") != _make_source_id("b")
+    assert _make_source_id("1") == _make_source_id("1")
+    assert _make_source_id("1") != _make_source_id("2")
 
 
-def test_parse_rfc822() -> None:
-    dt = _parse_pubdate("Tue, 30 Jun 2026 09:28:55 +0000")
-    assert dt is not None and dt.year == 2026 and dt.day == 30
+def test_parse_wp_date_utc() -> None:
+    dt = _parse_wp_date("2026-06-30T09:28:55")
+    assert dt is not None and dt.year == 2026 and dt.tzinfo is not None
 
 
-def test_normalize_drops_noise_categories(connector: WirInDortmundConnector) -> None:
+def test_embedded_drops_noise_categories() -> None:
+    assert _embedded_author(RAW) == "Wir in Dortmund (SK)"
+    cats = _embedded_categories(RAW)
+    assert "Hörde" in cats
+    assert "Dortmund" not in cats and "Startseite" not in cats  # noise dropped
+
+
+def test_normalize(connector: WirInDortmundConnector) -> None:
     n = connector.normalize(RAW)
-    assert n["valid_from"] is not None
+    assert n["label"].startswith("Das ist „Dortmunder Tatendrang")  # entities unescaped
+    assert n["valid_from"] is not None and n["valid_from"].year == 2026
     assert "<" not in n["description"]
-    assert n["author"] == "Wir in Dortmund (SK)"
-    # "Dortmund" + "Startseite" dropped; "Hörde" kept
     assert "Hörde" in n["categories"]
-    assert "Startseite" not in n["categories"] and "Dortmund" not in n["categories"]
 
 
 @pytest.mark.asyncio
