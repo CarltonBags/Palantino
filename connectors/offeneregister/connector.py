@@ -21,6 +21,8 @@ import logging
 import re
 from typing import Any, AsyncGenerator
 
+import httpx
+
 from connectors.base import BaseConnector, ConnectorShape
 from ontology.edges import EdgeBase
 from ontology.nodes import NodeBase, Organization
@@ -79,22 +81,27 @@ class OffeneRegisterConnector(BaseConnector):
         # decompressor at each stream boundary and feed it the leftover bytes.
         dec = bz2.BZ2Decompressor()
         tail = b""
-        async with self._http.stream("GET", _DUMP_URL, timeout=600.0) as resp:
-            resp.raise_for_status()
-            async for chunk in resp.aiter_bytes(1 << 16):
-                while chunk:
-                    out = dec.decompress(chunk)
-                    data = tail + out
-                    *lines, tail = data.split(b"\n")
-                    for ln in lines:
-                        rec = self._dortmund_record(ln)
-                        if rec is not None:
-                            yield rec
-                    if dec.eof:
-                        chunk = dec.unused_data
-                        dec = bz2.BZ2Decompressor()
-                    else:
-                        chunk = b""
+        try:
+            async with self._http.stream("GET", _DUMP_URL, timeout=600.0) as resp:
+                resp.raise_for_status()
+                async for chunk in resp.aiter_bytes(1 << 16):
+                    while chunk:
+                        out = dec.decompress(chunk)
+                        data = tail + out
+                        *lines, tail = data.split(b"\n")
+                        for ln in lines:
+                            rec = self._dortmund_record(ln)
+                            if rec is not None:
+                                yield rec
+                        if dec.eof:
+                            chunk = dec.unused_data
+                            dec = bz2.BZ2Decompressor()
+                        else:
+                            chunk = b""
+        except (httpx.RemoteProtocolError, httpx.StreamError, EOFError) as exc:
+            # Large bulk download occasionally truncates near the end; keep the
+            # ~99% we parsed rather than failing the whole run.
+            logger.warning("offeneregister stream ended early (%s) — keeping parsed records", exc)
         rec = self._dortmund_record(tail)
         if rec is not None:
             yield rec
