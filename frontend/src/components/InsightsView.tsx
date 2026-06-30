@@ -20,8 +20,9 @@ const TYPE_COLOR: Record<string, string> = {
 };
 
 export default function InsightsView({ onOpenNode, pipeline = "classic" }: Props) {
-  const [mode, setMode] = useState<"classic" | "structural">(pipeline);
+  const [mode, setMode] = useState<"classic" | "structural" | "complementary">(pipeline);
   const structural = mode === "structural";
+  const complementary = mode === "complementary";
   const [items, setItems] = useState<StoredInsight[]>([]);
   const [typeFilter, setTypeFilter] = useState("");
   const [scanning, setScanning] = useState(false);
@@ -83,17 +84,26 @@ export default function InsightsView({ onOpenNode, pipeline = "classic" }: Props
             Erkenntnisse über Dortmund
           </div>
           <div className="mode-toggle" style={{ margin: "8px 0" }} title="Erkenntnis-Modus">
-            <button className={!structural ? "on" : ""} onClick={() => setMode("classic")}>
+            <button className={mode === "classic" ? "on" : ""} onClick={() => setMode("classic")}>
               Klassisch
             </button>
             <button className={structural ? "on" : ""} onClick={() => setMode("structural")}>
               Strukturell
+            </button>
+            <button className={complementary ? "on" : ""} onClick={() => setMode("complementary")}>
+              Komplementär
             </button>
           </div>
           {structural && (
             <div className="muted" style={{ marginBottom: 8 }}>
               Räumliche Nähe statt Ähnlichkeit: anstehende Events neben noch nicht
               verbundenen Geschäften (PostGIS-Distanz, gegensätzliche Typen).
+            </div>
+          )}
+          {complementary && (
+            <div className="muted" style={{ marginBottom: 8 }}>
+              Bedarf trifft Angebot: was eine Veranstaltung braucht und wer es liefern
+              kann (z.B. Radtour ↔ Rastmöglichkeit/Fest) — über ein Ressourcen-Vokabular.
             </div>
           )}
           <div className="history-filters" style={{ alignItems: "center" }}>

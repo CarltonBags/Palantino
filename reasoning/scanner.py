@@ -61,6 +61,7 @@ class Candidate:
     anchor_id: str
     nodes: list[dict[str, Any]] = field(default_factory=list)
     edges: list[dict[str, Any]] = field(default_factory=list)
+    note: str = ""  # optional rationale (e.g. which needs↔offers matched)
 
 
 # ── pure helpers (unit-tested) ──────────────────────────────────────────────────
@@ -422,6 +423,60 @@ async def structural_synergy_candidates(
     return out
 
 
+async def complementary_candidates(limit: int = 50, window_days: int = 14) -> list[Candidate]:
+    """
+    Complementary synergy = need ↔ offer. For each upcoming event with tagged
+    needs, find the provider (a POI — always available — or another event within a
+    time window) whose offers cover the MOST of those needs. The bike-tour ↔
+    beer-festival shape that neither similarity nor proximity catches: the tour
+    needs a refreshment stop, the festival offers it. One best provider per event,
+    strongest matches first.
+    """
+    out: list[Candidate] = []
+    async with _get_conn() as conn:
+        rows = await conn.fetch(
+            """
+            WITH matches AS (
+                SELECT a.id AS aid, b.id AS bid,
+                       count(DISTINCT an.tag) AS overlap,
+                       array_agg(DISTINCT an.tag) AS tags
+                FROM nodes a
+                JOIN node_resources an ON an.node_id = a.id AND an.kind = 'need'
+                JOIN node_resources bo ON bo.kind = 'offer' AND bo.tag = an.tag
+                JOIN nodes b ON b.id = bo.node_id AND b.id <> a.id AND b.valid_to IS NULL
+                WHERE a.node_type = 'Event' AND a.valid_to IS NULL
+                  AND a.valid_from >= CURRENT_DATE
+                  AND b.label NOT LIKE 'OSM %'
+                  AND (b.node_type = 'POI'
+                       OR (b.node_type = 'Event'
+                           AND b.valid_from BETWEEN a.valid_from - make_interval(days => $2)
+                                               AND a.valid_from + make_interval(days => $2)))
+                  AND NOT EXISTS (
+                      SELECT 1 FROM edges e WHERE e.valid_to IS NULL
+                        AND ((e.from_node_id = a.id AND e.to_node_id = b.id)
+                          OR (e.from_node_id = b.id AND e.to_node_id = a.id)))
+                GROUP BY a.id, b.id
+            )
+            SELECT aid, bid, overlap, tags FROM (
+                SELECT DISTINCT ON (aid) aid, bid, overlap, tags
+                FROM matches ORDER BY aid, overlap DESC
+            ) q ORDER BY overlap DESC LIMIT $1
+            """,
+            limit, window_days,
+        )
+        for r in rows:
+            node_ids = [str(r["aid"]), str(r["bid"])]
+            nodes, edges = await _gather_subgraph(conn, node_ids)
+            if len(nodes) < 2:
+                continue
+            note = (
+                f"Die Veranstaltung benötigt {', '.join(r['tags'])}; "
+                f"der vorgeschlagene Partner bietet genau das an (noch nicht verbunden)."
+            )
+            out.append(Candidate("complementary", node_ids, str(r["aid"]), nodes, edges, note=note))
+    return out
+
+
 # ── reasoning + persistence ─────────────────────────────────────────────────────
 
 async def _reason(candidate: Candidate, insight_type: str) -> list[dict[str, Any]]:
@@ -432,6 +487,8 @@ async def _reason(candidate: Candidate, insight_type: str) -> list[dict[str, Any
         subgraph_json=format_subgraph(candidate.nodes, candidate.edges),
         today=date.today().isoformat(),
     )
+    if candidate.note:
+        prompt += f"\n\nHinweis (warum diese Akteure gepaart wurden): {candidate.note}"
     # Headroom for reasoning models (v4-pro spends budget on hidden reasoning).
     text = await complete(SYSTEM_PROMPT, prompt, max_tokens=8000)
     return parse_insights(text)
@@ -486,6 +543,12 @@ async def scan(
 
     if mode == "structural":
         candidates = dedup_candidates(await structural_synergy_candidates(limit=limit))
+        news_candidates = []
+        insight_types = ("synergy",)
+    elif mode == "complementary":
+        from reasoning.resource_enrich import enrich_events
+        await enrich_events(limit=max(limit * 3, 15))  # tag fresh events first
+        candidates = dedup_candidates(await complementary_candidates(limit=limit))
         news_candidates = []
         insight_types = ("synergy",)
     else:

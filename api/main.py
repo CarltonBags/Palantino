@@ -539,10 +539,10 @@ async def get_subgraph(req: SubgraphRequest) -> dict[str, Any]:
 @app.post("/insights/scan")
 async def trigger_insight_scan(
     background: BackgroundTasks,
-    mode: str = Query(default="classic", pattern="^(classic|structural)$"),
+    mode: str = Query(default="classic", pattern="^(classic|structural|complementary)$"),
 ) -> dict[str, Any]:
     """Kick off a bounded insight scan in the background (populates /insights/stored).
-    mode=structural runs the PostGIS proximity synergy generator (Insights v2)."""
+    mode=structural = PostGIS proximity synergies; mode=complementary = need↔offer."""
     llm_key = settings.deepseek_api_key if settings.llm_provider == "deepseek" else settings.anthropic_api_key
     if not llm_key:
         raise HTTPException(status_code=503, detail=f"No API key for llm_provider={settings.llm_provider}")
@@ -571,8 +571,10 @@ async def list_stored_insights(
         filters.append(f"insight_type = ${len(params)}")
     if generator == "structural":
         filters.append("generator = 'structural_synergy'")
+    elif generator == "complementary":
+        filters.append("generator = 'complementary'")
     elif generator == "classic":
-        filters.append("generator <> 'structural_synergy'")
+        filters.append("generator NOT IN ('structural_synergy', 'complementary')")
     where = " AND ".join(filters)
     params.append(limit)
 

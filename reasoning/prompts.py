@@ -293,6 +293,26 @@ Regeln:
   Nachfrage ein und baue auf dem bisherigen Verlauf auf. Nenne genutzte Quellen.
 """
 
+RESOURCE_TAG_SYSTEM = """\
+Du verschlagwortest eine Veranstaltung mit RESSOURCEN für komplementäre Synergien:
+was die Veranstaltung BRAUCHT (needs) und was sie selbst BIETET (offers).
+Nutze AUSSCHLIESSLICH Tags aus diesem festen Vokabular (sonst kein Join möglich):
+verpflegung, getraenke, uebernachtung, transport, parkraum, publikum,
+veranstaltungsflaeche, technik, sponsoring, sanitaer, kinderbetreuung,
+unterhaltung, sichtbarkeit, einzelhandel, reparatur, ziel, sicherheit, erste_hilfe.
+Beispiel: Radtour → needs [verpflegung, getraenke, ziel, reparatur], offers
+[publikum]. Bierfest → needs [transport, parkraum, sanitaer, sicherheit], offers
+[verpflegung, getraenke, ziel, publikum, unterhaltung].
+Wähle nur klar zutreffende Tags (lieber wenige). Antworte NUR mit JSON."""
+
+RESOURCE_TAG_PROMPT = """\
+Veranstaltung: {label}
+Kategorie: {category}
+Beschreibung: {description}
+
+Gib JSON: {{"needs": ["..."], "offers": ["..."]}} — nur Tags aus dem Vokabular.
+"""
+
 DISCUSS_PROMPT = """\
 Aktuelles Datum: {today}.
 
