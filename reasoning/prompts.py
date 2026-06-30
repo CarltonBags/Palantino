@@ -205,6 +205,20 @@ menschliche Prüfung wert sind — NICHT um Anschuldigungen zu erheben.
   begünstigt eine im Graphen verbundene Partei; ungewöhnliche zeitliche Nähe.
 - Zu jeder Auffälligkeit: die konkreten Fakten + Quelle, und WARUM es prüfenswert
   ist. Zeigen die Fakten nichts Belastbares, sage das klar — erfinde nichts.""",
+    "crime": _ANALYSIS_BASE + """
+
+Aufgabe: Analysiere GEMELDETE Vorfälle / polizeiliche Meldungen auf MUSTER —
+räumliche und zeitliche Häufungen, wiederkehrende Vorfallstypen, mögliche
+Zusammenhänge mit anderen Fakten (Veranstaltungen, Baustellen, Orte, Zeiträume).
+Strikte Regeln (nicht verhandelbar):
+- Es handelt sich um GEMELDETE Vorfälle aus den Quellen — KEINE bewiesenen
+  Straftaten und KEINE Kriminalitätsstatistik. Korrelation ist keine Ursache.
+- KEINE Mutmaßungen über Täter, keine Verdächtigungen, keine Identifizierung von
+  Personen. KEINE Stigmatisierung von Stadtteilen, Gruppen oder Herkünften.
+- KEINE Vorhersagen über zukünftige Straftaten oder einzelne Personen
+  (kein "predictive policing").
+- Beschreibe Muster rein sachlich mit Beleg (Quelle, Datum, Ort wie gemeldet).
+  Zeigen die Daten kein belastbares Muster, sage das offen — erfinde nichts.""",
 }
 
 ANALYSIS_PROMPT = """\
@@ -246,7 +260,8 @@ Regeln:
 - lens = "factual" (Standard), AUSSER die Frage zielt klar auf eine Analyse:
   Synergien/Potenziale/Kooperationen -> "synergy"; Ineffizienzen/Widersprüche/
   Doppelarbeit/Verschwendung -> "inefficiency"; Auffälligkeiten/Unregelmäßigkeiten/
-  Missstände/"Skandale"/Interessenkonflikte -> "scandal".
+  Missstände/"Skandale"/Interessenkonflikte -> "scandal"; Kriminalität/Straftaten/
+  Diebstähle/Einbrüche/Polizeimeldungen/Sicherheit/Vorfälle-Muster -> "crime".
 - node_types nur setzen, wenn die Frage klar einen Typ meint:
   Ratsbeschlüsse/Anträge -> ["Resolution","AgendaItem"]; Sitzungen -> ["Meeting"];
   Veranstaltungen/Events/Konzerte/Nachrichten -> ["Event"]; Ausschreibungen -> ["Tender"];

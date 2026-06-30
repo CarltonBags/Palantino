@@ -19,7 +19,7 @@ const EXAMPLES = [
   "Was wurde 2023 zu Radwegen in Hörde beschlossen?",
   "Welche ungenutzten Synergien gibt es in der Nordstadt?",
   "Gibt es Auffälligkeiten bei öffentlichen Vergaben?",
-  "Welche Ineffizienzen gibt es bei Ratsbeschlüssen zu Radwegen?",
+  "Welche Muster gibt es bei Polizeimeldungen?",
 ];
 
 export default function ChatView({ onOpenNode }: Props) {

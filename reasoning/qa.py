@@ -32,7 +32,7 @@ from reasoning.prompts import (
     format_subgraph,
 )
 
-_LENSES = {"factual", "synergy", "inefficiency", "scandal"}
+_LENSES = {"factual", "synergy", "inefficiency", "scandal", "crime"}
 
 logger = logging.getLogger(__name__)
 
