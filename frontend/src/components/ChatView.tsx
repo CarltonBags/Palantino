@@ -1,8 +1,9 @@
 import { useEffect, useRef, useState } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
-import { api, type ChatAnswer } from "../api";
+import { api, type ChatAnswer, type EventItem } from "../api";
 import RatingBar from "./RatingBar";
+import EventPicker from "./EventPicker";
 
 interface Props {
   onOpenNode: (id: string) => void;
@@ -27,6 +28,7 @@ const EXAMPLES = [
 export default function ChatView({ onOpenNode }: Props) {
   const [q, setQ] = useState("");
   const [turns, setTurns] = useState<Turn[]>([]);
+  const [picker, setPicker] = useState(false);
   const busy = turns.some((t) => t.pending);
   const endRef = useRef<HTMLDivElement>(null);
 
@@ -43,6 +45,20 @@ export default function ChatView({ onOpenNode }: Props) {
     try {
       const a = await api.chat(question);
       setTurns((t) => t.map((x, i) => (i === idx ? { q: x.q, a } : x)));
+    } catch (e) {
+      setTurns((t) => t.map((x, i) => (i === idx ? { q: x.q, err: String(e) } : x)));
+    }
+  }
+
+  async function analyzeEvent(ev: EventItem, lens: string) {
+    setPicker(false);
+    if (busy) return;
+    const label = lens === "synergy" ? "Synergien" : "Ineffizienzen";
+    const idx = turns.length;
+    setTurns((t) => [...t, { q: `${label} rund um „${ev.label}"`, pending: true }]);
+    try {
+      const a = await api.analyzeNode(ev.id, lens);
+      setTurns((t) => t.map((x, i) => (i === idx ? { q: a.question ?? x.q, a } : x)));
     } catch (e) {
       setTurns((t) => t.map((x, i) => (i === idx ? { q: x.q, err: String(e) } : x)));
     }
@@ -122,6 +138,13 @@ export default function ChatView({ onOpenNode }: Props) {
 
       <div className="chat-inputbar">
         <div className="chat-input">
+          <button
+            className="add-event"
+            title="Event zur Analyse hinzufügen"
+            onClick={() => setPicker(true)}
+          >
+            + Event
+          </button>
           <input
             type="text"
             placeholder="Frage zu Dortmund stellen…"
@@ -135,6 +158,8 @@ export default function ChatView({ onOpenNode }: Props) {
           </button>
         </div>
       </div>
+
+      {picker && <EventPicker onPick={analyzeEvent} onClose={() => setPicker(false)} />}
     </div>
   );
 }

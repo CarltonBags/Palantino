@@ -122,6 +122,19 @@ export interface ChatAnswer {
   answer: string;
   citations: ChatCitation[];
   intent?: { lens?: string };
+  question?: string;
+}
+export interface EventCategory {
+  category: string;
+  n: number;
+}
+export interface EventItem {
+  id: string;
+  label: string;
+  category: string | null;
+  venue: string | null;
+  stadtbezirk: string | null;
+  valid_from: string | null;
 }
 export interface ChatHistoryItem {
   id: string;
@@ -165,6 +178,16 @@ export const api = {
   subgraph: (nodeIds: string[]) =>
     post<{ nodes: GraphNode[]; edges: GraphEdge[] }>(`/subgraph`, { node_ids: nodeIds }),
   chat: (question: string) => post<ChatAnswer>(`/chat`, { question }),
+  eventCategories: () => get<EventCategory[]>(`/events/categories`),
+  events: (opts: { category?: string; q?: string } = {}) => {
+    const p = new URLSearchParams();
+    if (opts.category) p.set("category", opts.category);
+    if (opts.q) p.set("q", opts.q);
+    const qs = p.toString();
+    return get<EventItem[]>(`/events${qs ? `?${qs}` : ""}`);
+  },
+  analyzeNode: (nodeId: string, lens: string) =>
+    post<ChatAnswer>(`/chat/node`, { node_id: nodeId, lens }),
   rateChat: (id: string, rating: number) =>
     post<{ id: string; rating: number }>(`/chat/${id}/rating`, { rating }),
   chatHistory: (opts: { minRating?: number; lens?: string } = {}) => {

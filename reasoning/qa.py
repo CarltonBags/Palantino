@@ -222,3 +222,68 @@ async def answer_question(question: str, k: int = 24) -> dict[str, Any]:
         for n in nodes
     ]
     return {"answer": answer, "citations": citations, "intent": _intent_out(intent)}
+
+
+_ANCHOR_LABEL = {
+    "synergy": "Synergien", "inefficiency": "Ineffizienzen",
+    "scandal": "Auffälligkeiten", "crime": "Vorfallsmuster",
+}
+
+
+async def analyze_node(node_id: str, lens: str, k: int = 20) -> dict[str, Any]:
+    """
+    Anchored analysis: run a lens (synergy/inefficiency/…) centred on ONE node
+    (e.g. a chosen event), over that node + its semantically-nearest neighbours +
+    their edges. Powers the 'add to chat' event picker.
+    """
+    lens = lens if lens in _ANCHOR_LABEL else "synergy"
+    async with get_conn() as conn:
+        anchor = await conn.fetchrow(
+            "SELECT id, node_type, label, properties, source, source_url, valid_from "
+            "FROM nodes WHERE id = $1 AND valid_to IS NULL",
+            node_id,
+        )
+        if anchor is None:
+            return {"answer": "Knoten nicht gefunden.", "citations": [], "intent": {"lens": lens}}
+        neighbours = await conn.fetch(
+            """
+            SELECT n.id, n.node_type, n.label, n.properties, n.source, n.source_url, n.valid_from
+            FROM node_embeddings e
+            JOIN nodes n ON n.id = e.node_id
+            WHERE n.valid_to IS NULL AND n.id <> $1
+            ORDER BY e.embedding <=> (SELECT embedding FROM node_embeddings WHERE node_id = $1)
+            LIMIT $2
+            """,
+            node_id, k,
+        )
+        nodes = [dict(anchor)] + [dict(n) for n in neighbours]
+        ids = [str(n["id"]) for n in nodes]
+        edges = await conn.fetch(
+            """
+            SELECT id, edge_type, from_node_id, to_node_id, properties, source
+            FROM edges
+            WHERE from_node_id = ANY($1::uuid[]) AND to_node_id = ANY($1::uuid[])
+              AND valid_to IS NULL
+            """,
+            ids,
+        )
+
+    question = f"Welche {_ANCHOR_LABEL[lens]} gibt es rund um: {anchor['label']}?"
+    subgraph = format_subgraph(nodes, edges)
+    prompt = ANALYSIS_PROMPT.format(
+        question=question, subgraph_json=subgraph, today=date.today().isoformat()
+    )
+    answer = await complete(ANALYSIS_SYSTEM_PROMPTS[lens], prompt, max_tokens=4000)
+    citations = [
+        {
+            "id": str(n["id"]), "label": n["label"], "node_type": n["node_type"],
+            "source": n["source"], "source_url": n["source_url"],
+        }
+        for n in nodes
+    ]
+    return {
+        "answer": answer,
+        "citations": citations,
+        "question": question,
+        "intent": {"lens": lens, "anchor": anchor["label"]},
+    }
