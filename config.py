@@ -23,7 +23,15 @@ class Settings(BaseSettings):
     overpass_api_url: str = "https://overpass-api.de/api/interpreter"
     brightsky_api_url: str = "https://api.brightsky.dev"
 
+    # Reasoning LLM — swappable provider (anthropic | deepseek). DeepSeek uses an
+    # OpenAI-compatible API, so switching is a config flag + a key.
+    llm_provider: str = "anthropic"
     anthropic_api_key: str = ""
+    anthropic_base_url: str = "https://api.anthropic.com/v1"
+    anthropic_model: str = "claude-sonnet-4-6"
+    deepseek_api_key: str = ""
+    deepseek_base_url: str = "https://api.deepseek.com"
+    deepseek_model: str = "deepseek-chat"
 
     # Embeddings (semantic layer). Provider is swappable; OpenAI is the default.
     openai_api_key: str = ""

@@ -31,6 +31,7 @@ from typing import Any
 from uuid import UUID
 
 from config import settings
+from reasoning.llm import active_model, complete
 from reasoning.prompts import (
     INEFFICIENCY_PROMPT,
     SYNERGY_PROMPT,
@@ -40,7 +41,6 @@ from reasoning.prompts import (
 
 logger = logging.getLogger(__name__)
 
-MODEL = "claude-sonnet-4-6"
 CONFIDENCE_FLOOR = 0.7
 # News-context synergies are creative/contextual and human-reviewed, so persist
 # them at a lower bar — surface more, let a person confirm or dismiss.
@@ -363,13 +363,7 @@ async def news_context_candidates(
 
 # ── reasoning + persistence ─────────────────────────────────────────────────────
 
-def _build_client() -> Any:
-    import anthropic
-
-    return anthropic.Anthropic(api_key=settings.anthropic_api_key)
-
-
-async def _reason(client: Any, candidate: Candidate, insight_type: str) -> list[dict[str, Any]]:
+async def _reason(candidate: Candidate, insight_type: str) -> list[dict[str, Any]]:
     from datetime import date
 
     template = INEFFICIENCY_PROMPT if insight_type == "inefficiency" else SYNERGY_PROMPT
@@ -377,13 +371,8 @@ async def _reason(client: Any, candidate: Candidate, insight_type: str) -> list[
         subgraph_json=format_subgraph(candidate.nodes, candidate.edges),
         today=date.today().isoformat(),
     )
-    message = client.messages.create(
-        model=MODEL,
-        max_tokens=2048,
-        system=SYSTEM_PROMPT,
-        messages=[{"role": "user", "content": prompt}],
-    )
-    return parse_insights(message.content[0].text)
+    text = await complete(SYSTEM_PROMPT, prompt, max_tokens=2048)
+    return parse_insights(text)
 
 
 async def _persist(candidate: Candidate, insight_type: str, insight: dict[str, Any]) -> bool:
@@ -408,7 +397,7 @@ async def _persist(candidate: Candidate, insight_type: str, insight: dict[str, A
             candidate.node_ids,
             insight.get("evidence", []),
             insight.get("reasoning_trace"),
-            MODEL,
+            active_model(),
             candidate.generator,
             key,
         )
@@ -417,8 +406,11 @@ async def _persist(candidate: Candidate, insight_type: str, insight: dict[str, A
 
 async def scan(insight_types: tuple[str, ...] = ("inefficiency", "synergy")) -> dict[str, int]:
     """Generate candidates, reason over each, persist high-confidence insights."""
-    if not settings.anthropic_api_key:
-        raise RuntimeError("ANTHROPIC_API_KEY not configured — cannot run insight scan")
+    key = settings.deepseek_api_key if settings.llm_provider == "deepseek" else settings.anthropic_api_key
+    if not key:
+        raise RuntimeError(
+            f"No API key for llm_provider={settings.llm_provider!r} — cannot run insight scan"
+        )
 
     candidates = dedup_candidates(
         await spatial_temporal_candidates()
@@ -433,19 +425,18 @@ async def scan(insight_types: tuple[str, ...] = ("inefficiency", "synergy")) -> 
         len(candidates), len(news_candidates),
     )
 
-    client = _build_client()
     counts = {"candidates": len(candidates) + len(news_candidates), "written": 0}
     for candidate in candidates:
         for insight_type in insight_types:
             try:
-                for insight in await _reason(client, candidate, insight_type):
+                for insight in await _reason(candidate, insight_type):
                     if await _persist(candidate, insight_type, insight):
                         counts["written"] += 1
             except Exception as exc:  # one bad candidate shouldn't abort the scan
                 logger.warning("scan failed on %s/%s: %s", candidate.anchor_id, insight_type, exc)
     for candidate in news_candidates:
         try:
-            for insight in await _reason(client, candidate, "synergy"):
+            for insight in await _reason(candidate, "synergy"):
                 if await _persist(candidate, "synergy", insight):
                     counts["written"] += 1
         except Exception as exc:
