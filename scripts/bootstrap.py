@@ -88,6 +88,7 @@ async def _run_all() -> None:
         ("gremientermine", flows.run_gremientermine),
         ("gremienniederschriften", flows.run_gremienniederschriften),
         ("text_linking", flows.run_text_linking),
+        ("embed_nodes", flows.run_embed_nodes),
     ]
     results: list[tuple[str, str]] = []
     for name, fn in sequence:

@@ -31,6 +31,7 @@ from typing import Any
 from uuid import UUID
 
 from config import settings
+from reasoning.llm import active_model, complete
 from reasoning.prompts import (
     INEFFICIENCY_PROMPT,
     SYNERGY_PROMPT,
@@ -40,7 +41,6 @@ from reasoning.prompts import (
 
 logger = logging.getLogger(__name__)
 
-MODEL = "claude-sonnet-4-6"
 CONFIDENCE_FLOOR = 0.7
 # News-context synergies are creative/contextual and human-reviewed, so persist
 # them at a lower bar — surface more, let a person confirm or dismiss.
@@ -308,50 +308,52 @@ async def ego_network_candidates(min_degree: int = 3, limit: int = 50) -> list[C
 
 
 async def news_context_candidates(
-    news_limit: int = 15, event_sample: int = 35
+    news_limit: int = 15, event_sample: int = 20
 ) -> list[Candidate]:
     """
-    News-driven context. Anchor on a recent local-news article and pull a
-    city-wide sample of upcoming public events into the same subgraph, so the
-    model can creatively connect what the news SIGNALS (a need, mood, theme,
-    audience) to an event / place elsewhere that could address or amplify it.
+    News-driven context. Anchor on a recent local-news article and pull the
+    SEMANTICALLY NEAREST upcoming events (by embedding cosine distance) into the
+    same subgraph, so the model can connect what the news SIGNALS (a need, mood,
+    theme, audience) to an event that could address or amplify it — e.g. a piece
+    on a refugee centre + a participatory exhibition for the same audience.
 
-    Deliberately NOT spatially constrained — the relevant event may be across
-    town (e.g. an article on social isolation in one district + a community event
-    in another). News is the contextual layer the other generators lack.
+    Retrieval is semantic, NOT spatial: the relevant event may be across town.
+    Requires embeddings (run_embed_nodes); without them this yields nothing and
+    the scan falls back to the other generators.
     """
     out: list[Candidate] = []
     async with _get_conn() as conn:
         anchors = await conn.fetch(
             """
-            SELECT id FROM nodes
-            WHERE node_type = 'Event' AND properties->>'event_type' = 'news'
-              AND valid_to IS NULL
-            ORDER BY valid_from DESC NULLS LAST
+            SELECT n.id FROM nodes n
+            JOIN node_embeddings e ON e.node_id = n.id
+            WHERE n.node_type = 'Event' AND n.properties->>'event_type' = 'news'
+              AND n.valid_to IS NULL
+            ORDER BY n.valid_from DESC NULLS LAST
             LIMIT $1
             """,
             news_limit,
         )
-        events = await conn.fetch(
-            """
-            SELECT id FROM nodes
-            WHERE node_type = 'Event'
-              AND source = 'dortmund_veranstaltungskalender'
-              AND valid_to IS NULL AND geom IS NOT NULL
-              AND (valid_from IS NULL OR valid_from >= NOW() - INTERVAL '7 days')
-            -- Favour free / community events (better civic-synergy partners than
-            -- commercial concerts) and randomise for venue/district diversity, so
-            -- the news has something connectable rather than 18 shows at one hall.
-            ORDER BY (properties->>'free_of_charge' = 'true') DESC, random()
-            LIMIT $1
-            """,
-            event_sample,
-        )
-        event_ids = [str(r["id"]) for r in events]
-        if not event_ids:
-            return out
         for a in anchors:
-            node_ids = [str(a["id"]), *event_ids]
+            # k nearest upcoming public events to this article's embedding.
+            rows = await conn.fetch(
+                """
+                SELECT ev.id
+                FROM nodes ev
+                JOIN node_embeddings ee ON ee.node_id = ev.id
+                WHERE ev.node_type = 'Event'
+                  AND ev.source = 'dortmund_veranstaltungskalender'
+                  AND ev.valid_to IS NULL AND ev.geom IS NOT NULL
+                  AND (ev.valid_from IS NULL OR ev.valid_from >= NOW() - INTERVAL '7 days')
+                ORDER BY ee.embedding <=> (SELECT embedding FROM node_embeddings WHERE node_id = $1)
+                LIMIT $2
+                """,
+                a["id"], event_sample,
+            )
+            neighbour_ids = [str(r["id"]) for r in rows]
+            if not neighbour_ids:
+                continue
+            node_ids = [str(a["id"]), *neighbour_ids]
             nodes, edges = await _gather_subgraph(conn, node_ids)
             if len(nodes) < 2:
                 continue
@@ -361,13 +363,7 @@ async def news_context_candidates(
 
 # ── reasoning + persistence ─────────────────────────────────────────────────────
 
-def _build_client() -> Any:
-    import anthropic
-
-    return anthropic.Anthropic(api_key=settings.anthropic_api_key)
-
-
-async def _reason(client: Any, candidate: Candidate, insight_type: str) -> list[dict[str, Any]]:
+async def _reason(candidate: Candidate, insight_type: str) -> list[dict[str, Any]]:
     from datetime import date
 
     template = INEFFICIENCY_PROMPT if insight_type == "inefficiency" else SYNERGY_PROMPT
@@ -375,13 +371,8 @@ async def _reason(client: Any, candidate: Candidate, insight_type: str) -> list[
         subgraph_json=format_subgraph(candidate.nodes, candidate.edges),
         today=date.today().isoformat(),
     )
-    message = client.messages.create(
-        model=MODEL,
-        max_tokens=2048,
-        system=SYSTEM_PROMPT,
-        messages=[{"role": "user", "content": prompt}],
-    )
-    return parse_insights(message.content[0].text)
+    text = await complete(SYSTEM_PROMPT, prompt, max_tokens=2048)
+    return parse_insights(text)
 
 
 async def _persist(candidate: Candidate, insight_type: str, insight: dict[str, Any]) -> bool:
@@ -406,7 +397,7 @@ async def _persist(candidate: Candidate, insight_type: str, insight: dict[str, A
             candidate.node_ids,
             insight.get("evidence", []),
             insight.get("reasoning_trace"),
-            MODEL,
+            active_model(),
             candidate.generator,
             key,
         )
@@ -415,8 +406,11 @@ async def _persist(candidate: Candidate, insight_type: str, insight: dict[str, A
 
 async def scan(insight_types: tuple[str, ...] = ("inefficiency", "synergy")) -> dict[str, int]:
     """Generate candidates, reason over each, persist high-confidence insights."""
-    if not settings.anthropic_api_key:
-        raise RuntimeError("ANTHROPIC_API_KEY not configured — cannot run insight scan")
+    key = settings.deepseek_api_key if settings.llm_provider == "deepseek" else settings.anthropic_api_key
+    if not key:
+        raise RuntimeError(
+            f"No API key for llm_provider={settings.llm_provider!r} — cannot run insight scan"
+        )
 
     candidates = dedup_candidates(
         await spatial_temporal_candidates()
@@ -431,19 +425,18 @@ async def scan(insight_types: tuple[str, ...] = ("inefficiency", "synergy")) -> 
         len(candidates), len(news_candidates),
     )
 
-    client = _build_client()
     counts = {"candidates": len(candidates) + len(news_candidates), "written": 0}
     for candidate in candidates:
         for insight_type in insight_types:
             try:
-                for insight in await _reason(client, candidate, insight_type):
+                for insight in await _reason(candidate, insight_type):
                     if await _persist(candidate, insight_type, insight):
                         counts["written"] += 1
             except Exception as exc:  # one bad candidate shouldn't abort the scan
                 logger.warning("scan failed on %s/%s: %s", candidate.anchor_id, insight_type, exc)
     for candidate in news_candidates:
         try:
-            for insight in await _reason(client, candidate, "synergy"):
+            for insight in await _reason(candidate, "synergy"):
                 if await _persist(candidate, "synergy", insight):
                     counts["written"] += 1
         except Exception as exc:

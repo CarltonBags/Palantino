@@ -8,12 +8,12 @@ from datetime import date
 from typing import Any
 from uuid import UUID
 
-import anthropic
 from fastapi import FastAPI, HTTPException, Query
 from pydantic import BaseModel
 
 from config import settings
 from db.session import close_pool, get_conn
+from reasoning.llm import complete
 from db.temporal import parse_as_of, validity_clause
 from reasoning.prompts import (
     INEFFICIENCY_PROMPT,
@@ -257,8 +257,11 @@ class InsightRequest(BaseModel):
 
 @app.post("/insights")
 async def get_insights(req: InsightRequest) -> dict[str, Any]:
-    if not settings.anthropic_api_key:
-        raise HTTPException(status_code=503, detail="ANTHROPIC_API_KEY not configured")
+    key = settings.deepseek_api_key if settings.llm_provider == "deepseek" else settings.anthropic_api_key
+    if not key:
+        raise HTTPException(
+            status_code=503, detail=f"No API key for llm_provider={settings.llm_provider}"
+        )
 
     node_strs = [str(nid) for nid in req.node_ids]
     async with get_conn() as conn:
@@ -282,17 +285,16 @@ async def get_insights(req: InsightRequest) -> dict[str, Any]:
     template = INEFFICIENCY_PROMPT if req.insight_type == "inefficiency" else SYNERGY_PROMPT
     prompt = template.format(subgraph_json=subgraph, today=date.today().isoformat())
 
-    client = anthropic.Anthropic(api_key=settings.anthropic_api_key)
-    message = client.messages.create(
-        model="claude-sonnet-4-6",
-        max_tokens=2048,
-        system=SYSTEM_PROMPT,
-        messages=[{"role": "user", "content": prompt}],
-    )
+    raw_text = await complete(SYSTEM_PROMPT, prompt, max_tokens=2048)
 
-    raw_text = message.content[0].text
+    # Tolerate ```json fences (providers vary) before parsing.
+    text = raw_text.strip()
+    if text.startswith("```"):
+        text = text.split("```", 2)[1]
+        if text.lstrip().lower().startswith("json"):
+            text = text.lstrip()[4:]
     try:
-        result = json.loads(raw_text)
+        result = json.loads(text)
     except json.JSONDecodeError:
         raise HTTPException(status_code=502, detail="Reasoning layer returned non-JSON")
 
