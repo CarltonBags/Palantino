@@ -26,7 +26,7 @@ export default function App() {
   const [asOf, setAsOf] = useState<string>(""); // "" = current
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [view, setView] = useState<
-    "map" | "chat" | "insights" | "insights2" | "history" | "leads"
+    "map" | "chat" | "chat2" | "insights" | "insights2" | "history" | "leads"
   >("map");
 
   // Changing the as-of instant invalidates all cached point layers.
@@ -107,6 +107,9 @@ export default function App() {
         <button className={view === "chat" ? "active" : ""} onClick={() => setView("chat")}>
           Chat
         </button>
+        <button className={view === "chat2" ? "active" : ""} onClick={() => setView("chat2")}>
+          Chat v2
+        </button>
         <button className={view === "insights" ? "active" : ""} onClick={() => setView("insights")}>
           Insights
         </button>
@@ -123,6 +126,22 @@ export default function App() {
 
       {view === "chat" ? (
         <ChatView
+          onOpenNode={(id) => {
+            setSelectedId(id);
+            setView("map");
+          }}
+        />
+      ) : view === "chat2" ? (
+        <ChatView
+          retrieval="structural"
+          title="Chat v2 · Strukturell"
+          subtitle="Synergie-Suche über räumliche Nähe statt Ähnlichkeit: Sitze werden um nahe, noch unverbundene Akteure ergänzt (PostGIS). Vergleiche mit dem normalen Chat."
+          examples={[
+            "Welche ungenutzten Synergien gibt es rund um Veranstaltungen in der Nordstadt?",
+            "Welche Kooperationen zwischen Events und Geschäften sind in der City möglich?",
+            "Wo könnten Kultur und lokales Gewerbe zusammenarbeiten?",
+          ]}
+          showEventPicker={false}
           onOpenNode={(id) => {
             setSelectedId(id);
             setView("map");
