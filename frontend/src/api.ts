@@ -145,6 +145,7 @@ export interface ChatHistoryItem {
   citations: ChatCitation[];
   rating: number | null;
   created_at: string;
+  retrieval: string | null;
 }
 
 async function get<T>(path: string): Promise<T> {

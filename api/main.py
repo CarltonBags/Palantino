@@ -330,11 +330,12 @@ async def chat(req: ChatRequest) -> dict[str, Any]:
     async with get_conn() as conn:
         row = await conn.fetchrow(
             """
-            INSERT INTO chat_queries (question, answer, lens, intent, citations, model)
-            VALUES ($1, $2, $3, $4, $5, $6) RETURNING id
+            INSERT INTO chat_queries (question, answer, lens, intent, citations, model, retrieval)
+            VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING id
             """,
             req.question, result["answer"], intent.get("lens"),
             intent, result.get("citations", []), active_model(),
+            "structural" if req.retrieval == "structural" else "semantic",
         )
     result["id"] = str(row["id"])
     return result
@@ -409,7 +410,7 @@ async def chat_history(
     async with get_conn() as conn:
         rows = await conn.fetch(
             f"""
-            SELECT id, question, answer, lens, citations, model, rating, created_at
+            SELECT id, question, answer, lens, citations, model, rating, created_at, retrieval
             FROM chat_queries WHERE {' AND '.join(filters)}
             ORDER BY created_at DESC LIMIT ${len(params)}
             """,

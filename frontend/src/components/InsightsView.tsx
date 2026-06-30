@@ -20,7 +20,8 @@ const TYPE_COLOR: Record<string, string> = {
 };
 
 export default function InsightsView({ onOpenNode, pipeline = "classic" }: Props) {
-  const structural = pipeline === "structural";
+  const [mode, setMode] = useState<"classic" | "structural">(pipeline);
+  const structural = mode === "structural";
   const [items, setItems] = useState<StoredInsight[]>([]);
   const [typeFilter, setTypeFilter] = useState("");
   const [scanning, setScanning] = useState(false);
@@ -29,11 +30,11 @@ export default function InsightsView({ onOpenNode, pipeline = "classic" }: Props
   function load() {
     setErr(null);
     api
-      .storedInsights("new", typeFilter || undefined, pipeline)
+      .storedInsights("new", typeFilter || undefined, mode)
       .then(setItems)
       .catch((e) => setErr(String(e)));
   }
-  useEffect(load, [typeFilter, pipeline]);
+  useEffect(load, [typeFilter, mode]);
 
   async function decide(id: string, status: "confirmed" | "dismissed") {
     await api.setInsightStatus(id, status);
@@ -43,7 +44,7 @@ export default function InsightsView({ onOpenNode, pipeline = "classic" }: Props
   async function scan() {
     setScanning(true);
     try {
-      await api.scanInsights(pipeline);
+      await api.scanInsights(mode);
       setTimeout(load, 10000);
       setTimeout(() => {
         load();
@@ -79,7 +80,15 @@ export default function InsightsView({ onOpenNode, pipeline = "classic" }: Props
       <div className="chat-thread">
         <div className="history-head">
           <div className="chat-hero-title" style={{ fontSize: 26 }}>
-            {structural ? "Insights v2 · Strukturelle Synergien" : "Erkenntnisse über Dortmund"}
+            Erkenntnisse über Dortmund
+          </div>
+          <div className="mode-toggle" style={{ margin: "8px 0" }} title="Erkenntnis-Modus">
+            <button className={!structural ? "on" : ""} onClick={() => setMode("classic")}>
+              Klassisch
+            </button>
+            <button className={structural ? "on" : ""} onClick={() => setMode("structural")}>
+              Strukturell
+            </button>
           </div>
           {structural && (
             <div className="muted" style={{ marginBottom: 8 }}>

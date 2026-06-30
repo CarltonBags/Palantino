@@ -84,6 +84,10 @@ export default function HistoryView({ onOpenNode }: Props) {
               <span className="hist-q">{it.question}</span>
               <span className="hist-meta">
                 {it.lens && <span className="tag">{LENS_LABEL[it.lens] ?? it.lens}</span>}
+                {it.retrieval === "structural" && (
+                  <span className="tag tag-structural">Strukturell</span>
+                )}
+                {it.retrieval === "semantic" && <span className="tag">Semantisch</span>}
                 {it.rating != null && <span className="hist-rating">{it.rating}/10</span>}
                 <span className="muted">{new Date(it.created_at).toLocaleDateString("de-DE")}</span>
               </span>
