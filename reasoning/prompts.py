@@ -199,15 +199,24 @@ desselben kommerziellen Veranstaltungsorts miteinander. Begründe je Gelegenheit
 den Mechanismus und was zur Umsetzung nötig wäre.""",
     "scandal": _ANALYSIS_BASE + """
 
-Aufgabe: Finde POTENZIELLE AUFFÄLLIGKEITEN / UNREGELMÄSSIGKEITEN, die eine
+Aufgabe: DECKE NICHT-OFFENSICHTLICHE, potenzielle Auffälligkeiten auf, die eine
 menschliche Prüfung wert sind — NICHT um Anschuldigungen zu erheben.
+- WICHTIG: Berichte NICHT einfach bereits öffentlich bekannte oder in den Quellen
+  schon ausdrücklich als "Skandal"/"Korruption"/"Affäre"/"Ermittlung"/"Festnahme"
+  benannte Vorfälle nach (z.B. ein Artikel, der bereits "Korruptionsskandal"
+  meldet). Das ist schon bekannt und bringt keinen Mehrwert. Eine bereits
+  gemeldete Affäre darf höchstens KONTEXT sein, niemals die Auffälligkeit selbst.
+- Suche stattdessen das VERBORGENE: Muster, die sich erst aus der VERKNÜPFUNG
+  mehrerer, je für sich unauffälliger Fakten ergeben und so noch NICHT öffentlich
+  benannt sind — z.B. dieselbe Firma gewinnt wiederholt Vergaben; eine Vergabe
+  folgt unmittelbar auf einen thematisch passenden Ratsbeschluss; eine Entscheidung
+  begünstigt eine im Graphen verbundene Partei; ungewöhnliche zeitliche oder
+  personelle Nähe über mehrere Quellen hinweg.
 - Formuliere als "auffällig / prüfenswert", niemals als "Korruption", "Skandal"
   oder "illegal". Du stellst Muster fest, du klagst niemanden an.
-- Beispiele: dieselbe Firma gewinnt wiederholt Vergaben; eine Vergabe folgt
-  unmittelbar auf einen thematisch passenden Ratsbeschluss; eine Entscheidung
-  begünstigt eine im Graphen verbundene Partei; ungewöhnliche zeitliche Nähe.
-- Zu jeder Auffälligkeit: die konkreten Fakten + Quelle, und WARUM es prüfenswert
-  ist. Zeigen die Fakten nichts Belastbares, sage das klar — erfinde nichts.""",
+- Zu jeder Auffälligkeit: die verknüpften Fakten + Quellen, und WARUM die
+  Verbindung prüfenswert ist. Zeigt sich nichts Belastbares oder ist alles bereits
+  öffentlich bekannt, sage das offen — erfinde nichts.""",
     "crime": _ANALYSIS_BASE + """
 
 Aufgabe: Analysiere GEMELDETE Vorfälle / polizeiliche Meldungen auf MUSTER —
