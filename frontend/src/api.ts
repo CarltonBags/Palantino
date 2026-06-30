@@ -110,6 +110,18 @@ export interface StoredInsight {
   created_at: string;
 }
 
+export interface ChatCitation {
+  id: string;
+  label: string;
+  node_type: string;
+  source: string;
+  source_url: string | null;
+}
+export interface ChatAnswer {
+  answer: string;
+  citations: ChatCitation[];
+}
+
 async function get<T>(path: string): Promise<T> {
   const res = await fetch(`${BASE}${path}`);
   if (!res.ok) throw new Error(`${res.status} ${res.statusText} on ${path}`);
@@ -141,6 +153,7 @@ export const api = {
   },
   subgraph: (nodeIds: string[]) =>
     post<{ nodes: GraphNode[]; edges: GraphEdge[] }>(`/subgraph`, { node_ids: nodeIds }),
+  chat: (question: string) => post<ChatAnswer>(`/chat`, { question }),
   node: (id: string) => get<GraphNode>(`/nodes/${id}`),
   nodeHistory: (id: string) => get<GraphNode[]>(`/nodes/${id}/history`),
   nodeEdges: (id: string) => get<GraphEdge[]>(`/nodes/${id}/edges`),

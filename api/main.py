@@ -301,6 +301,28 @@ async def get_insights(req: InsightRequest) -> dict[str, Any]:
     return result
 
 
+# ── Ask-the-city chat (grounded RAG) ────────────────────────────────────────────
+
+class ChatRequest(BaseModel):
+    question: str
+    k: int = 24
+
+
+@app.post("/chat")
+async def chat(req: ChatRequest) -> dict[str, Any]:
+    """Answer a natural-language question from the most relevant graph facts."""
+    if not settings.openai_api_key:
+        raise HTTPException(status_code=503, detail="OPENAI_API_KEY not configured (embeddings)")
+    llm_key = settings.deepseek_api_key if settings.llm_provider == "deepseek" else settings.anthropic_api_key
+    if not llm_key:
+        raise HTTPException(
+            status_code=503, detail=f"No API key for llm_provider={settings.llm_provider}"
+        )
+    from reasoning.qa import answer_question
+
+    return await answer_question(req.question, k=min(max(req.k, 4), 48))
+
+
 # ── Subgraph (for graph visualization) ──────────────────────────────────────────
 
 class SubgraphRequest(BaseModel):
