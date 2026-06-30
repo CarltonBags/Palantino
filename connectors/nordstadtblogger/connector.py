@@ -99,7 +99,12 @@ class NordstadtbloggerConnector(BaseConnector):
         for page in range(1, last_page + 1):
             if page > 1:
                 await asyncio.sleep(0.5)  # polite rate-limit for the archive walk
-                resp = await self._get(_API_URL, params={**params, "page": page})
+                try:
+                    resp = await self._get(_API_URL, params={**params, "page": page})
+                except Exception:
+                    # A transient WP error on one page shouldn't abort a 160-page
+                    # archive walk — stop gracefully and keep what we have.
+                    break
             posts = resp.json()
             if not isinstance(posts, list) or not posts:
                 break
