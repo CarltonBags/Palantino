@@ -1,4 +1,4 @@
-// Typed client for the civic-graph FastAPI backend.
+// Typed client for the SynergizerDO FastAPI backend.
 // In dev, Vite proxies /api → http://localhost:8000 (see vite.config.ts).
 
 const BASE = "/api";
