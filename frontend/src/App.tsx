@@ -4,6 +4,7 @@ import { COLOR_BY_TYPE, GEO_NODE_TYPES } from "./nodeTypes";
 import MapView from "./components/MapView";
 import Sidebar from "./components/Sidebar";
 import IngestionStatus from "./components/IngestionStatus";
+import ChatView from "./components/ChatView";
 
 const EMPTY: GeoJSON.FeatureCollection = { type: "FeatureCollection", features: [] };
 
@@ -22,6 +23,7 @@ export default function App() {
   const [showRoads, setShowRoads] = useState(true);
   const [asOf, setAsOf] = useState<string>(""); // "" = current
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [view, setView] = useState<"map" | "chat">("map");
 
   // Changing the as-of instant invalidates all cached point layers.
   useEffect(() => {
@@ -93,21 +95,41 @@ export default function App() {
   }
 
   return (
-    <div className="app">
-      <Sidebar
-        activeTypes={activeTypes}
-        toggleType={toggleType}
-        showRoads={showRoads}
-        toggleRoads={() => setShowRoads((v) => !v)}
-        asOf={asOf}
-        setAsOf={setAsOf}
-        selectedId={selectedId}
-        onSelect={setSelectedId}
-      />
-      <div className="map-wrap">
-        <MapView points={points} areas={areas} roads={roadsShown} onSelect={setSelectedId} />
+    <>
+      <div className="view-switch">
+        <button className={view === "map" ? "active" : ""} onClick={() => setView("map")}>
+          Karte
+        </button>
+        <button className={view === "chat" ? "active" : ""} onClick={() => setView("chat")}>
+          Chat
+        </button>
       </div>
-      <IngestionStatus />
-    </div>
+
+      {view === "chat" ? (
+        <ChatView
+          onOpenNode={(id) => {
+            setSelectedId(id);
+            setView("map");
+          }}
+        />
+      ) : (
+        <div className="app">
+          <Sidebar
+            activeTypes={activeTypes}
+            toggleType={toggleType}
+            showRoads={showRoads}
+            toggleRoads={() => setShowRoads((v) => !v)}
+            asOf={asOf}
+            setAsOf={setAsOf}
+            selectedId={selectedId}
+            onSelect={setSelectedId}
+          />
+          <div className="map-wrap">
+            <MapView points={points} areas={areas} roads={roadsShown} onSelect={setSelectedId} />
+          </div>
+          <IngestionStatus />
+        </div>
+      )}
+    </>
   );
 }

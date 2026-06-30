@@ -5,7 +5,6 @@ import NodeDetail from "./NodeDetail";
 import ResolutionPanel from "./ResolutionPanel";
 import InsightsPanel from "./InsightsPanel";
 import SourcesPanel from "./SourcesPanel";
-import ChatPanel from "./ChatPanel";
 
 interface Props {
   activeTypes: Set<string>;
@@ -18,7 +17,7 @@ interface Props {
   onSelect: (id: string | null) => void;
 }
 
-type Tab = "explore" | "chat" | "insights" | "sources";
+type Tab = "explore" | "insights" | "sources";
 
 export default function Sidebar({
   activeTypes,
@@ -58,9 +57,6 @@ export default function Sidebar({
           <button className={tab === "explore" ? "primary" : ""} onClick={() => setTab("explore")}>
             Erkunden
           </button>
-          <button className={tab === "chat" ? "primary" : ""} onClick={() => setTab("chat")}>
-            Fragen
-          </button>
           <button className={tab === "insights" ? "primary" : ""} onClick={() => setTab("insights")}>
             Erkenntnisse
           </button>
@@ -79,8 +75,6 @@ export default function Sidebar({
             <NodeDetail nodeId={selectedId} onSelect={onSelect} />
           </div>
         </>
-      ) : tab === "chat" ? (
-        <ChatPanel onSelect={onSelect} />
       ) : tab === "insights" ? (
         <InsightsPanel onSelect={onSelect} />
       ) : tab === "sources" ? (
