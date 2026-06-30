@@ -363,6 +363,65 @@ async def news_context_candidates(
     return out
 
 
+async def structural_synergy_candidates(
+    limit: int = 50, max_dist_m: int = 300, min_dist_m: int = 25
+) -> list[Candidate]:
+    """
+    Synergy = link prediction, not similarity. Find pairs that are PHYSICALLY close,
+    of DIFFERENT type, currently UNCONNECTED, and temporally live — the exact shape
+    of an untapped opportunity (an upcoming event next to a business that could
+    cross-promote). PostGIS proximity does what vector similarity structurally
+    cannot: surface complementary, dissimilar things that *should* be linked.
+
+    One nearest unconnected POI per upcoming event; the venue itself is excluded
+    (min distance), and the shared district is added so co-location is explicit.
+    """
+    out: list[Candidate] = []
+    async with _get_conn() as conn:
+        pairs = await conn.fetch(
+            """
+            SELECT DISTINCT ON (e.id) e.id AS ev, p.id AS poi,
+                   ST_Distance(e.geom::geography, p.geom::geography) AS dist
+            FROM nodes e
+            JOIN nodes p ON p.node_type = 'POI' AND p.valid_to IS NULL
+                AND p.geom IS NOT NULL AND p.id <> e.id
+                AND p.label NOT LIKE 'OSM %'   -- named businesses only (real partners)
+                AND ST_DWithin(e.geom::geography, p.geom::geography, $1)
+                AND ST_Distance(e.geom::geography, p.geom::geography) > $2
+            WHERE e.node_type = 'Event' AND e.valid_to IS NULL AND e.geom IS NOT NULL
+              AND e.valid_from >= CURRENT_DATE
+              AND NOT EXISTS (
+                  SELECT 1 FROM edges ed WHERE ed.valid_to IS NULL
+                    AND ((ed.from_node_id = e.id AND ed.to_node_id = p.id)
+                      OR (ed.from_node_id = p.id AND ed.to_node_id = e.id)))
+            ORDER BY e.id, dist ASC
+            LIMIT $3
+            """,
+            max_dist_m, min_dist_m, limit,
+        )
+        for pr in pairs:
+            node_ids = [str(pr["ev"]), str(pr["poi"])]
+            # add a district both sit in, so the subgraph shows the co-location
+            shared = await conn.fetchval(
+                """
+                SELECT a.to_node_id FROM edges a
+                JOIN edges b ON b.to_node_id = a.to_node_id AND b.from_node_id = $2
+                  AND b.edge_type = 'LOCATED_IN' AND b.valid_to IS NULL
+                JOIN nodes g ON g.id = a.to_node_id AND g.node_type = 'GeoArea'
+                WHERE a.from_node_id = $1 AND a.edge_type = 'LOCATED_IN' AND a.valid_to IS NULL
+                LIMIT 1
+                """,
+                pr["ev"], pr["poi"],
+            )
+            if shared:
+                node_ids.append(str(shared))
+            nodes, edges = await _gather_subgraph(conn, node_ids)
+            if len({n["node_type"] for n in nodes}) < 2:
+                continue
+            out.append(Candidate("structural_synergy", node_ids, str(pr["ev"]), nodes, edges))
+    return out
+
+
 # ── reasoning + persistence ─────────────────────────────────────────────────────
 
 async def _reason(candidate: Candidate, insight_type: str) -> list[dict[str, Any]]:
@@ -411,24 +470,33 @@ async def _persist(
 
 
 async def scan(
-    insight_types: tuple[str, ...] = ("inefficiency", "synergy"), limit: int = 50
+    insight_types: tuple[str, ...] = ("inefficiency", "synergy"),
+    limit: int = 50,
+    mode: str = "classic",
 ) -> dict[str, int]:
     """Generate candidates, reason over each, persist high-confidence insights.
-    `limit` caps candidates per generator — keep it small for on-demand scans."""
+    `limit` caps candidates per generator — keep it small for on-demand scans.
+    mode='structural' runs only the PostGIS proximity synergy generator (Insights
+    v2); 'classic' runs the original similarity/traversal generators."""
     key = settings.deepseek_api_key if settings.llm_provider == "deepseek" else settings.anthropic_api_key
     if not key:
         raise RuntimeError(
             f"No API key for llm_provider={settings.llm_provider!r} — cannot run insight scan"
         )
 
-    candidates = dedup_candidates(
-        await spatial_temporal_candidates(limit=limit)
-        + await area_bridge_candidates(limit=limit)
-        + await ego_network_candidates(limit=limit)
-    )
-    # News-context candidates run through synergy only (they surface creative
-    # news→event/place connections, not inefficiencies).
-    news_candidates = dedup_candidates(await news_context_candidates(news_limit=limit))
+    if mode == "structural":
+        candidates = dedup_candidates(await structural_synergy_candidates(limit=limit))
+        news_candidates = []
+        insight_types = ("synergy",)
+    else:
+        candidates = dedup_candidates(
+            await spatial_temporal_candidates(limit=limit)
+            + await area_bridge_candidates(limit=limit)
+            + await ego_network_candidates(limit=limit)
+        )
+        # News-context candidates run through synergy only (they surface creative
+        # news→event/place connections, not inefficiencies).
+        news_candidates = dedup_candidates(await news_context_candidates(news_limit=limit))
     logger.info(
         "insight scan: %d candidate subgraphs + %d news-context (deduped)",
         len(candidates), len(news_candidates),

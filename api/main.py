@@ -533,15 +533,19 @@ async def get_subgraph(req: SubgraphRequest) -> dict[str, Any]:
 # ── Stored insights (from the reasoning scanner) ────────────────────────────────
 
 @app.post("/insights/scan")
-async def trigger_insight_scan(background: BackgroundTasks) -> dict[str, Any]:
-    """Kick off a bounded insight scan in the background (populates /insights/stored)."""
+async def trigger_insight_scan(
+    background: BackgroundTasks,
+    mode: str = Query(default="classic", pattern="^(classic|structural)$"),
+) -> dict[str, Any]:
+    """Kick off a bounded insight scan in the background (populates /insights/stored).
+    mode=structural runs the PostGIS proximity synergy generator (Insights v2)."""
     llm_key = settings.deepseek_api_key if settings.llm_provider == "deepseek" else settings.anthropic_api_key
     if not llm_key:
         raise HTTPException(status_code=503, detail=f"No API key for llm_provider={settings.llm_provider}")
     from reasoning.scanner import scan
 
-    background.add_task(scan, limit=5)
-    return {"status": "scan_started"}
+    background.add_task(scan, limit=5, mode=mode)
+    return {"status": "scan_started", "mode": mode}
 
 
 @app.get("/insights/stored")
@@ -549,6 +553,7 @@ async def list_stored_insights(
     insight_type: str | None = None,
     status: str = Query(default="new", pattern="^(new|confirmed|dismissed|all)$"),
     min_confidence: float = 0.0,
+    generator: str | None = None,
     limit: int = Query(default=100, le=500),
 ) -> list[dict[str, Any]]:
     """Insights produced by the reasoning scanner (rule 3: inferred, separate)."""
@@ -560,6 +565,10 @@ async def list_stored_insights(
     if insight_type:
         params.append(insight_type)
         filters.append(f"insight_type = ${len(params)}")
+    if generator == "structural":
+        filters.append("generator = 'structural_synergy'")
+    elif generator == "classic":
+        filters.append("generator <> 'structural_synergy'")
     where = " AND ".join(filters)
     params.append(limit)
 

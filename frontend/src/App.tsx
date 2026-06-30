@@ -25,7 +25,9 @@ export default function App() {
   const [showRoads, setShowRoads] = useState(true);
   const [asOf, setAsOf] = useState<string>(""); // "" = current
   const [selectedId, setSelectedId] = useState<string | null>(null);
-  const [view, setView] = useState<"map" | "chat" | "insights" | "history" | "leads">("map");
+  const [view, setView] = useState<
+    "map" | "chat" | "insights" | "insights2" | "history" | "leads"
+  >("map");
 
   // Changing the as-of instant invalidates all cached point layers.
   useEffect(() => {
@@ -108,6 +110,9 @@ export default function App() {
         <button className={view === "insights" ? "active" : ""} onClick={() => setView("insights")}>
           Insights
         </button>
+        <button className={view === "insights2" ? "active" : ""} onClick={() => setView("insights2")}>
+          Insights v2
+        </button>
         <button className={view === "history" ? "active" : ""} onClick={() => setView("history")}>
           Verlauf
         </button>
@@ -142,6 +147,14 @@ export default function App() {
         />
       ) : view === "insights" ? (
         <InsightsView
+          onOpenNode={(id) => {
+            setSelectedId(id);
+            setView("map");
+          }}
+        />
+      ) : view === "insights2" ? (
+        <InsightsView
+          pipeline="structural"
           onOpenNode={(id) => {
             setSelectedId(id);
             setView("map");
