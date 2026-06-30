@@ -5,6 +5,7 @@ import MapView from "./components/MapView";
 import Sidebar from "./components/Sidebar";
 import IngestionStatus from "./components/IngestionStatus";
 import ChatView from "./components/ChatView";
+import HistoryView from "./components/HistoryView";
 
 const EMPTY: GeoJSON.FeatureCollection = { type: "FeatureCollection", features: [] };
 
@@ -23,7 +24,7 @@ export default function App() {
   const [showRoads, setShowRoads] = useState(true);
   const [asOf, setAsOf] = useState<string>(""); // "" = current
   const [selectedId, setSelectedId] = useState<string | null>(null);
-  const [view, setView] = useState<"map" | "chat">("map");
+  const [view, setView] = useState<"map" | "chat" | "history">("map");
 
   // Changing the as-of instant invalidates all cached point layers.
   useEffect(() => {
@@ -103,10 +104,20 @@ export default function App() {
         <button className={view === "chat" ? "active" : ""} onClick={() => setView("chat")}>
           Chat
         </button>
+        <button className={view === "history" ? "active" : ""} onClick={() => setView("history")}>
+          Verlauf
+        </button>
       </div>
 
       {view === "chat" ? (
         <ChatView
+          onOpenNode={(id) => {
+            setSelectedId(id);
+            setView("map");
+          }}
+        />
+      ) : view === "history" ? (
+        <HistoryView
           onOpenNode={(id) => {
             setSelectedId(id);
             setView("map");

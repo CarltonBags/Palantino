@@ -151,6 +151,8 @@ Regeln:
 - Trenne Fakten von Interpretation; markiere Schlussfolgerungen als solche.
 - Antworte auf Deutsch, präzise und knapp. Nenne am Ende die genutzten Quellen
   (Quelle bzw. Quell-URL der herangezogenen Knoten).
+- Formatiere übersichtlich in Markdown: beginne mit einer kurzen fettgedruckten
+  Kernaussage, danach bei Bedarf ## Überschriften und Stichpunkte.
 """
 
 QA_PROMPT = """\
@@ -175,7 +177,8 @@ Grundregeln:
 - Über reale benannte Personen/Amtsträger nur belegte Beobachtungen, niemals
   Mutmaßungen über Motive, Charakter oder Schuld.
 - Trenne Beobachtung von Bewertung. Nenne zu jedem Punkt die Quelle.
-- Antworte auf Deutsch in knappem Markdown (kurze Punkte mit Beleg)."""
+- Antworte auf Deutsch in übersichtlichem Markdown: kurze fettgedruckte
+  Kernaussage zuerst, dann ## Überschriften und Stichpunkte mit Beleg."""
 
 ANALYSIS_SYSTEM_PROMPTS = {
     "inefficiency": _ANALYSIS_BASE + """

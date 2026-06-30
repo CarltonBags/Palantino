@@ -310,7 +310,7 @@ class ChatRequest(BaseModel):
 
 @app.post("/chat")
 async def chat(req: ChatRequest) -> dict[str, Any]:
-    """Answer a natural-language question from the most relevant graph facts."""
+    """Answer a question from the most relevant graph facts; log it for history."""
     if not settings.openai_api_key:
         raise HTTPException(status_code=503, detail="OPENAI_API_KEY not configured (embeddings)")
     llm_key = settings.deepseek_api_key if settings.llm_provider == "deepseek" else settings.anthropic_api_key
@@ -318,9 +318,70 @@ async def chat(req: ChatRequest) -> dict[str, Any]:
         raise HTTPException(
             status_code=503, detail=f"No API key for llm_provider={settings.llm_provider}"
         )
+    from reasoning.llm import active_model
     from reasoning.qa import answer_question
 
-    return await answer_question(req.question, k=min(max(req.k, 4), 48))
+    result = await answer_question(req.question, k=min(max(req.k, 4), 48))
+    intent = result.get("intent") or {}
+    async with get_conn() as conn:
+        row = await conn.fetchrow(
+            """
+            INSERT INTO chat_queries (question, answer, lens, intent, citations, model)
+            VALUES ($1, $2, $3, $4, $5, $6) RETURNING id
+            """,
+            req.question, result["answer"], intent.get("lens"),
+            intent, result.get("citations", []), active_model(),
+        )
+    result["id"] = str(row["id"])
+    return result
+
+
+class RatingRequest(BaseModel):
+    rating: int
+
+
+@app.post("/chat/{query_id}/rating")
+async def rate_chat(query_id: UUID, req: RatingRequest) -> dict[str, Any]:
+    if not 1 <= req.rating <= 10:
+        raise HTTPException(status_code=400, detail="rating must be 1–10")
+    async with get_conn() as conn:
+        row = await conn.fetchrow(
+            "UPDATE chat_queries SET rating = $2 WHERE id = $1 RETURNING id",
+            str(query_id), req.rating,
+        )
+    if not row:
+        raise HTTPException(status_code=404, detail="query not found")
+    return {"id": str(query_id), "rating": req.rating}
+
+
+@app.get("/chat/history")
+async def chat_history(
+    min_rating: int = 0,
+    lens: str | None = None,
+    rated_only: bool = False,
+    limit: int = Query(default=50, le=200),
+) -> list[dict[str, Any]]:
+    filters = ["TRUE"]
+    params: list[Any] = []
+    if min_rating > 0:
+        params.append(min_rating)
+        filters.append(f"rating >= ${len(params)}")
+    elif rated_only:
+        filters.append("rating IS NOT NULL")
+    if lens:
+        params.append(lens)
+        filters.append(f"lens = ${len(params)}")
+    params.append(limit)
+    async with get_conn() as conn:
+        rows = await conn.fetch(
+            f"""
+            SELECT id, question, answer, lens, citations, model, rating, created_at
+            FROM chat_queries WHERE {' AND '.join(filters)}
+            ORDER BY created_at DESC LIMIT ${len(params)}
+            """,
+            *params,
+        )
+    return [dict(r) for r in rows]
 
 
 # ── Subgraph (for graph visualization) ──────────────────────────────────────────

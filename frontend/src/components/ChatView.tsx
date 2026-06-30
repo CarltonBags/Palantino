@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { api, type ChatAnswer } from "../api";
+import RatingBar from "./RatingBar";
 
 interface Props {
   onOpenNode: (id: string) => void;
@@ -12,6 +13,7 @@ interface Turn {
   a?: ChatAnswer;
   err?: string;
   pending?: boolean;
+  rating?: number;
 }
 
 const EXAMPLES = [
@@ -43,6 +45,15 @@ export default function ChatView({ onOpenNode }: Props) {
       setTurns((t) => t.map((x, i) => (i === idx ? { q: x.q, a } : x)));
     } catch (e) {
       setTurns((t) => t.map((x, i) => (i === idx ? { q: x.q, err: String(e) } : x)));
+    }
+  }
+
+  async function rate(idx: number, id: string, n: number) {
+    setTurns((t) => t.map((x, i) => (i === idx ? { ...x, rating: n } : x)));
+    try {
+      await api.rateChat(id, n);
+    } catch {
+      /* keep optimistic value */
     }
   }
 
@@ -98,6 +109,9 @@ export default function ChatView({ onOpenNode }: Props) {
                       ))}
                     </div>
                   </div>
+                )}
+                {t.a.id && (
+                  <RatingBar value={t.rating ?? null} onRate={(n) => rate(i, t.a!.id!, n)} />
                 )}
               </div>
             )}

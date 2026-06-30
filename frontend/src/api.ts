@@ -118,8 +118,19 @@ export interface ChatCitation {
   source_url: string | null;
 }
 export interface ChatAnswer {
+  id?: string;
   answer: string;
   citations: ChatCitation[];
+  intent?: { lens?: string };
+}
+export interface ChatHistoryItem {
+  id: string;
+  question: string;
+  answer: string;
+  lens: string | null;
+  citations: ChatCitation[];
+  rating: number | null;
+  created_at: string;
 }
 
 async function get<T>(path: string): Promise<T> {
@@ -154,6 +165,15 @@ export const api = {
   subgraph: (nodeIds: string[]) =>
     post<{ nodes: GraphNode[]; edges: GraphEdge[] }>(`/subgraph`, { node_ids: nodeIds }),
   chat: (question: string) => post<ChatAnswer>(`/chat`, { question }),
+  rateChat: (id: string, rating: number) =>
+    post<{ id: string; rating: number }>(`/chat/${id}/rating`, { rating }),
+  chatHistory: (opts: { minRating?: number; lens?: string } = {}) => {
+    const q = new URLSearchParams();
+    if (opts.minRating) q.set("min_rating", String(opts.minRating));
+    if (opts.lens) q.set("lens", opts.lens);
+    const qs = q.toString();
+    return get<ChatHistoryItem[]>(`/chat/history${qs ? `?${qs}` : ""}`);
+  },
   node: (id: string) => get<GraphNode>(`/nodes/${id}`),
   nodeHistory: (id: string) => get<GraphNode[]>(`/nodes/${id}/history`),
   nodeEdges: (id: string) => get<GraphEdge[]>(`/nodes/${id}/edges`),
