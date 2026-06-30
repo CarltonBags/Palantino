@@ -34,6 +34,7 @@ from connectors.gremientermine.connector import GremienTermineConnector
 from connectors.gtfs_realtime.connector import GtfsRealtimeConnector
 from connectors.gtfs_static.connector import GtfsStaticConnector
 from connectors.lanuv_air.connector import LanuvAirConnector
+from connectors.nordstadtblogger.connector import NordstadtbloggerConnector
 from connectors.ods_pois.connector import OdsPoisConnector
 from connectors.ods_stats.connector import OdsStatsConnector
 from connectors.oparl.connector import OParlConnector
@@ -363,6 +364,11 @@ async def run_brightsky() -> None:
 @flow(name="polizei-rss", log_prints=True)
 async def run_polizei_rss() -> None:
     await _run_node_connector(PolizeiRssConnector(), get_run_logger())
+
+
+@flow(name="nordstadtblogger", log_prints=True)
+async def run_nordstadtblogger() -> None:
+    await _run_node_connector(NordstadtbloggerConnector(), get_run_logger())
 
 
 @flow(name="lanuv-air", log_prints=True)
@@ -861,6 +867,7 @@ if __name__ == "__main__":
         run_brightsky.to_deployment(name="brightsky-hourly", cron="5 * * * *"),
         run_lanuv_air.to_deployment(name="lanuv-air-hourly", cron="15 * * * *"),
         run_polizei_rss.to_deployment(name="polizei-rss-hourly", cron="25 * * * *"),
+        run_nordstadtblogger.to_deployment(name="nordstadtblogger-6h", cron="40 */6 * * *"),
         # gtfs_realtime disabled: the gtfs.de feed is Germany-wide (~59k entities
         # per poll, no city filter), which floods the DB and drops the Supabase
         # connection. Re-enable only after ingesting gtfs_static and filtering

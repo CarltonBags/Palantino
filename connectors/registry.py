@@ -27,6 +27,7 @@ from connectors.gremientermine.connector import GremienTermineConnector
 from connectors.gtfs_realtime.connector import GtfsRealtimeConnector
 from connectors.gtfs_static.connector import GtfsStaticConnector
 from connectors.lanuv_air.connector import LanuvAirConnector
+from connectors.nordstadtblogger.connector import NordstadtbloggerConnector
 from connectors.ods_pois.connector import OdsPoisConnector
 from connectors.ods_stats.connector import OdsStatsConnector
 from connectors.oparl.connector import OParlConnector
@@ -76,6 +77,10 @@ REGISTRY: list[ConnectorSpec] = [
     ),
     ConnectorSpec(BrightSkyConnector, "5 * * * *", "Weather (Bright Sky / DWD)"),
     ConnectorSpec(PolizeiRssConnector, "25 * * * *", "Police press releases (RSS)"),
+    ConnectorSpec(
+        NordstadtbloggerConnector, "40 */6 * * *",
+        "Independent local news (Nordstadtblogger RSS)",
+    ),
     ConnectorSpec(
         DortmundEventsConnector, "0 8 * * *",
         "Public events calendar (fairs, festivals, concerts) from dortmund.de",

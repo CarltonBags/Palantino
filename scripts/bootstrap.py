@@ -77,6 +77,7 @@ async def _run_all() -> None:
         ("brightsky", flows.run_brightsky),
         ("lanuv_air", flows.run_lanuv_air),
         ("polizei_rss", flows.run_polizei_rss),
+        ("nordstadtblogger", flows.run_nordstadtblogger),
         ("vergabe_nrw", flows.run_vergabe_nrw),
         ("wahlergebnisse", flows.run_wahlergebnisse),
         ("wahlergebnisse_stimmbezirk", flows.run_wahlergebnisse_stimmbezirk),

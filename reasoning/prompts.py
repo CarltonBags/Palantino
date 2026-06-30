@@ -21,7 +21,8 @@ Rules:
   Never characterize motives or personality.
 - Return structured JSON: a list of insights, each with type, description, evidence (node/edge IDs),
   confidence (0-1), and a reasoning_trace.
-- confidence < 0.7: do not return.
+- Report your honest confidence (0-1); calibrate it, don't inflate. Do not return
+  anything below 0.5 (the system filters the rest by type).
 - Language: write every human-readable field (title, description, reasoning_trace)
   in GERMAN. Keep the JSON keys and the "type" value (inefficiency/synergy) in
   English; node/edge IDs stay verbatim.
@@ -70,15 +71,32 @@ Analyze this subgraph for POTENTIAL, not-yet-realized synergies — untapped
 opportunities the city has NOT acted on, where two or more civic facts COULD
 reinforce or benefit each other if someone coordinated them.
 
-Focus on latent potential, e.g.:
-  - many separate events at the same venue / date cluster that could be jointly
-    promoted or share logistics, security, transit (as partly seen at the
-    Westfalenhalle event cluster);
+Focus on latent potential ACROSS otherwise-unconnected actors or domains, e.g.:
+  - an event and an UNRELATED nearby actor — a different organizer, a community
+    group, a local business, a civic initiative — that could cross-promote or
+    share audience / logistics;
   - a council initiative and a nearby business / POI / infrastructure that could
     partner or be timed together;
   - planned works that could be coordinated with an event or another project.
 
+News as civic signal: if the subgraph contains news articles (event_type =
+"news"), read them as SIGNALS of what the city needs, feels, or is talking about
+— a problem, a mood, an underserved group, an emerging theme. Then creatively but
+plausibly connect that signal to an event, place, business, or civic action that
+could address, serve, or amplify it (e.g. an article about social isolation and a
+community/social event that could reach those residents). This link MAY span
+different districts — it need not be nearby. Be imaginative, but stay grounded:
+cite the specific article, make the benefit concrete, and don't force a connection
+that isn't genuinely plausible.
+
 Hard rules:
+  - NO intra-venue bundling of commercial venues. Do NOT propose synergies that
+    merely pool several events at the SAME large, professionally-run venue
+    (Westfalenhalle, Konzerthaus, Messe/arenas, big private clubs). Those are
+    already well marketed; the city adds nothing by bundling them. A commercial-
+    venue event may appear in a synergy ONLY when paired with a DIFFERENT,
+    otherwise-unconnected actor or domain (a community event, a civic/council
+    action, a small local business) — never with another event at the same venue.
   - TEMPORAL RELEVANCE (critical for events — they are time-sensitive): an
     opportunity is only actionable if its parts are timely relative to the
     current date and to each other. Use each node's valid_from. Do NOT pair a
