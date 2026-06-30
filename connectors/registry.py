@@ -36,6 +36,7 @@ from connectors.polizei_rss.connector import PolizeiRssConnector
 from connectors.strassen.connector import StrassenConnector
 from connectors.strassenabschnitte.connector import StrassenabschnitteConnector
 from connectors.vergabe_nrw.connector import VergabeNrwConnector
+from connectors.wirindortmund.connector import WirInDortmundConnector
 from connectors.wahlergebnisse.connector import WahlergebnisseConnector
 from connectors.wahlergebnisse_stimmbezirk.connector import (
     WahlergebnisseStimmbezirkConnector,
@@ -79,7 +80,11 @@ REGISTRY: list[ConnectorSpec] = [
     ConnectorSpec(PolizeiRssConnector, "25 * * * *", "Police press releases (RSS)"),
     ConnectorSpec(
         NordstadtbloggerConnector, "40 */6 * * *",
-        "Independent local news (Nordstadtblogger RSS)",
+        "Independent local news (Nordstadtblogger WP REST)",
+    ),
+    ConnectorSpec(
+        WirInDortmundConnector, "50 */6 * * *",
+        "Local news portal (Wir in Dortmund RSS)",
     ),
     ConnectorSpec(
         DortmundEventsConnector, "0 8 * * *",

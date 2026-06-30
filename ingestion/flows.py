@@ -43,6 +43,7 @@ from connectors.polizei_rss.connector import PolizeiRssConnector
 from connectors.strassen.connector import StrassenConnector
 from connectors.strassenabschnitte.connector import StrassenabschnitteConnector
 from connectors.vergabe_nrw.connector import VergabeNrwConnector
+from connectors.wirindortmund.connector import WirInDortmundConnector
 from connectors.wahlergebnisse.connector import WahlergebnisseConnector
 from connectors.wahlergebnisse_stimmbezirk.connector import (
     WahlergebnisseStimmbezirkConnector,
@@ -369,6 +370,11 @@ async def run_polizei_rss() -> None:
 @flow(name="nordstadtblogger", log_prints=True)
 async def run_nordstadtblogger() -> None:
     await _run_node_connector(NordstadtbloggerConnector(), get_run_logger())
+
+
+@flow(name="wirindortmund", log_prints=True)
+async def run_wirindortmund() -> None:
+    await _run_node_connector(WirInDortmundConnector(), get_run_logger())
 
 
 # ── Embeddings (semantic layer) ───────────────────────────────────────────────
@@ -886,6 +892,7 @@ if __name__ == "__main__":
         run_lanuv_air.to_deployment(name="lanuv-air-hourly", cron="15 * * * *"),
         run_polizei_rss.to_deployment(name="polizei-rss-hourly", cron="25 * * * *"),
         run_nordstadtblogger.to_deployment(name="nordstadtblogger-6h", cron="40 */6 * * *"),
+        run_wirindortmund.to_deployment(name="wirindortmund-6h", cron="50 */6 * * *"),
         # gtfs_realtime disabled: the gtfs.de feed is Germany-wide (~59k entities
         # per poll, no city filter), which floods the DB and drops the Supabase
         # connection. Re-enable only after ingesting gtfs_static and filtering
