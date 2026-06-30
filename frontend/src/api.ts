@@ -108,6 +108,7 @@ export interface StoredInsight {
   generator: string;
   status: string;
   created_at: string;
+  scan_id: string | null;
 }
 
 export interface ChatCitation {

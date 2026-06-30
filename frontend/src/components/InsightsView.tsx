@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { api, type StoredInsight } from "../api";
@@ -53,6 +53,25 @@ export default function InsightsView({ onOpenNode }: Props) {
     }
   }
 
+  // Group by the scan run that produced them (newest run first), so a fresh
+  // "Neue suchen" batch is clearly separated from older ones.
+  const groups = useMemo(() => {
+    const m = new Map<string, StoredInsight[]>();
+    for (const it of items) {
+      const key = it.scan_id ?? "older";
+      if (!m.has(key)) m.set(key, []);
+      m.get(key)!.push(it);
+    }
+    const arr = [...m.entries()].map(([key, its]) => ({
+      key,
+      older: key === "older",
+      time: its.reduce((mx, x) => (x.created_at > mx ? x.created_at : mx), its[0].created_at),
+      items: [...its].sort((a, b) => b.confidence - a.confidence),
+    }));
+    arr.sort((a, b) => (a.older ? 1 : b.older ? -1 : a.time < b.time ? 1 : -1));
+    return arr;
+  }, [items]);
+
   return (
     <div className="chat">
       <div className="chat-thread">
@@ -94,38 +113,48 @@ export default function InsightsView({ onOpenNode }: Props) {
           <div className="muted" style={{ marginTop: 16 }}>Der Graph wird durchsucht…</div>
         )}
 
-        {items.slice(0, 12).map((it) => (
-          <div className="insight-card" key={it.id}>
-            <div className="row" style={{ justifyContent: "space-between" }}>
-              <span className="tag" style={{ color: TYPE_COLOR[it.insight_type] ?? "var(--text)" }}>
-                {TYPE_LABEL[it.insight_type] ?? it.insight_type}
-              </span>
-              <span className="muted">
-                {Math.round(it.confidence * 100)}% · {it.generator}
-              </span>
+        {groups.map((g, gi) => (
+          <div key={g.key} className="scan-group">
+            <div className="scan-group-head">
+              {g.older
+                ? "Frühere Erkenntnisse"
+                : `Suche vom ${new Date(g.time).toLocaleString("de-DE")}`}
+              {gi === 0 && !g.older ? " · neueste" : ""} · {g.items.length}
             </div>
-            <div className="it" style={{ marginTop: 6, fontSize: 15 }}>{it.title}</div>
-            <div className="md">
-              <ReactMarkdown remarkPlugins={[remarkGfm]}>{it.description}</ReactMarkdown>
-            </div>
-            {it.reasoning_trace && (
-              <div className="muted" style={{ marginTop: 4 }}>{it.reasoning_trace}</div>
-            )}
-            {it.evidence_node_ids.length > 0 && (
-              <div className="cites-row" style={{ marginTop: 8 }}>
-                {it.evidence_node_ids.slice(0, 8).map((id, n) => (
-                  <button key={id} className="cite-chip" onClick={() => onOpenNode(id)}>
-                    Beleg {n + 1}
+            {g.items.map((it) => (
+              <div className="insight-card" key={it.id}>
+                <div className="row" style={{ justifyContent: "space-between" }}>
+                  <span className="tag" style={{ color: TYPE_COLOR[it.insight_type] ?? "var(--text)" }}>
+                    {TYPE_LABEL[it.insight_type] ?? it.insight_type}
+                  </span>
+                  <span className="muted">
+                    {Math.round(it.confidence * 100)}% · {it.generator}
+                  </span>
+                </div>
+                <div className="it" style={{ marginTop: 6, fontSize: 15 }}>{it.title}</div>
+                <div className="md">
+                  <ReactMarkdown remarkPlugins={[remarkGfm]}>{it.description}</ReactMarkdown>
+                </div>
+                {it.reasoning_trace && (
+                  <div className="muted" style={{ marginTop: 4 }}>{it.reasoning_trace}</div>
+                )}
+                {it.evidence_node_ids.length > 0 && (
+                  <div className="cites-row" style={{ marginTop: 8 }}>
+                    {it.evidence_node_ids.slice(0, 8).map((id, n) => (
+                      <button key={id} className="cite-chip" onClick={() => onOpenNode(id)}>
+                        Beleg {n + 1}
+                      </button>
+                    ))}
+                  </div>
+                )}
+                <div className="row" style={{ marginTop: 8 }}>
+                  <button className="primary" onClick={() => decide(it.id, "confirmed")}>
+                    Bestätigen
                   </button>
-                ))}
+                  <button onClick={() => decide(it.id, "dismissed")}>Verwerfen</button>
+                </div>
               </div>
-            )}
-            <div className="row" style={{ marginTop: 8 }}>
-              <button className="primary" onClick={() => decide(it.id, "confirmed")}>
-                Bestätigen
-              </button>
-              <button onClick={() => decide(it.id, "dismissed")}>Verwerfen</button>
-            </div>
+            ))}
           </div>
         ))}
       </div>

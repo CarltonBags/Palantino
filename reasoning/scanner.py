@@ -376,7 +376,9 @@ async def _reason(candidate: Candidate, insight_type: str) -> list[dict[str, Any
     return parse_insights(text)
 
 
-async def _persist(candidate: Candidate, insight_type: str, insight: dict[str, Any]) -> bool:
+async def _persist(
+    candidate: Candidate, insight_type: str, insight: dict[str, Any], scan_id: str | None = None
+) -> bool:
     confidence = float(insight.get("confidence", 0) or 0)
     floor = NEWS_CONFIDENCE_FLOOR if candidate.generator == "news_context" else CONFIDENCE_FLOOR
     if confidence < floor:
@@ -387,8 +389,8 @@ async def _persist(candidate: Candidate, insight_type: str, insight: dict[str, A
             """
             INSERT INTO insights
                 (insight_type, title, description, confidence, evidence_node_ids,
-                 evidence, reasoning_trace, model, generator, candidate_key)
-            VALUES ($1,$2,$3,$4,$5::uuid[],$6,$7,$8,$9,$10)
+                 evidence, reasoning_trace, model, generator, candidate_key, scan_id)
+            VALUES ($1,$2,$3,$4,$5::uuid[],$6,$7,$8,$9,$10,$11)
             ON CONFLICT (candidate_key) DO NOTHING
             """,
             insight_type,
@@ -401,6 +403,7 @@ async def _persist(candidate: Candidate, insight_type: str, insight: dict[str, A
             active_model(),
             candidate.generator,
             key,
+            scan_id,
         )
     return result.endswith("1")
 
@@ -429,19 +432,21 @@ async def scan(
         len(candidates), len(news_candidates),
     )
 
-    counts = {"candidates": len(candidates) + len(news_candidates), "written": 0}
+    import uuid
+    scan_id = str(uuid.uuid4())  # one batch id per run → group in the UI
+    counts = {"candidates": len(candidates) + len(news_candidates), "written": 0, "scan_id": scan_id}
     for candidate in candidates:
         for insight_type in insight_types:
             try:
                 for insight in await _reason(candidate, insight_type):
-                    if await _persist(candidate, insight_type, insight):
+                    if await _persist(candidate, insight_type, insight, scan_id):
                         counts["written"] += 1
             except Exception as exc:  # one bad candidate shouldn't abort the scan
                 logger.warning("scan failed on %s/%s: %s", candidate.anchor_id, insight_type, exc)
     for candidate in news_candidates:
         try:
             for insight in await _reason(candidate, "synergy"):
-                if await _persist(candidate, "synergy", insight):
+                if await _persist(candidate, "synergy", insight, scan_id):
                     counts["written"] += 1
         except Exception as exc:
             logger.warning("news scan failed on %s: %s", candidate.anchor_id, exc)

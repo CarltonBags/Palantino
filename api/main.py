@@ -568,7 +568,8 @@ async def list_stored_insights(
             f"""
             SELECT id::text AS id, insight_type, title, description, confidence,
                    evidence_node_ids::text[] AS evidence_node_ids,
-                   reasoning_trace, model, generator, status, created_at
+                   reasoning_trace, model, generator, status, created_at,
+                   scan_id::text AS scan_id
             FROM insights WHERE {where}
             ORDER BY confidence DESC, created_at DESC
             LIMIT ${len(params)}
