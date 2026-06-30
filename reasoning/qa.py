@@ -401,9 +401,10 @@ async def answer_question(
                 "intent": _intent_out(intent),
             }
         ids = [str(n["id"]) for n in nodes]
-        # Multi-hop graph expansion (analytical/factual only — not enumeration):
-        # follow edges out from the vector seeds to pull in connected facts.
-        if not list_mode:
+        # Multi-hop graph expansion (analytical/factual only — not enumeration).
+        # Skipped in structural mode: the proximity pairs ARE the signal, and
+        # expansion would flood them with text neighbours (AgendaItem/Road).
+        if not list_mode and not structural:
             ids = await _expand(conn, ids, max_total=40)
             nodes = await conn.fetch(
                 f"SELECT {_NODE_COLS} FROM nodes WHERE id = ANY($1::uuid[]) AND valid_to IS NULL",
