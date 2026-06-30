@@ -144,6 +144,53 @@ async def _retrieve(
     )
 
 
+# Don't fan out THROUGH these hub types — a district links to ~all co-located
+# nodes, which would explode the subgraph with noise. We still keep a hub if a
+# seed links to it (one hop in), we just don't expand its other members.
+_HUB_TYPES = ("GeoArea",)
+_NODE_COLS = "id, node_type, label, properties, source, source_url, valid_from"
+
+
+async def _expand(conn: Any, seed_ids: list[str], max_total: int = 40, hops: int = 2) -> list[str]:
+    """
+    Multi-hop graph expansion: walk edges out from the vector seeds (up to `hops`),
+    adding connected nodes — so the LLM sees relationally-linked facts (a tender
+    and the resolution behind it, a meeting and its agenda items) that pure vector
+    recall misses. Bounded: skips fan-out through hub types, caps the total.
+    """
+    seen: set[str] = set(seed_ids)
+    frontier = list(seed_ids)
+    for _ in range(hops):
+        if len(seen) >= max_total or not frontier:
+            break
+        expandable = await conn.fetch(
+            "SELECT id FROM nodes WHERE id = ANY($1::uuid[]) "
+            "AND node_type <> ALL($2::text[])",
+            frontier, list(_HUB_TYPES),
+        )
+        ex_ids = [str(r["id"]) for r in expandable]
+        if not ex_ids:
+            break
+        rows = await conn.fetch(
+            """
+            SELECT DISTINCT
+                CASE WHEN from_node_id = ANY($1::uuid[]) THEN to_node_id ELSE from_node_id END AS nid
+            FROM edges
+            WHERE (from_node_id = ANY($1::uuid[]) OR to_node_id = ANY($1::uuid[]))
+              AND valid_to IS NULL
+            LIMIT 400
+            """,
+            ex_ids,
+        )
+        new = [str(r["nid"]) for r in rows if str(r["nid"]) not in seen]
+        new = new[: max(0, max_total - len(seen))]
+        if not new:
+            break
+        seen.update(new)
+        frontier = new
+    return list(seen)
+
+
 def _intent_out(intent: dict[str, Any]) -> dict[str, Any]:
     return {
         "lens": intent.get("lens", "factual"),
@@ -163,7 +210,9 @@ async def answer_question(question: str, k: int = 24) -> dict[str, Any]:
         return {"answer": "Bitte eine Frage eingeben.", "citations": [], "intent": {}}
 
     intent = await extract_intent(question)
-    list_mode = bool(intent["list"])
+    # Enumeration only makes sense for factual "list all X" queries; analytical
+    # lenses always want the focused + graph-expanded subgraph, never a dump.
+    list_mode = bool(intent["list"]) and intent["lens"] == "factual"
     # "List all events" without an explicit date → default to upcoming (today on).
     if list_mode and not intent["date_from"] and (intent["category"] or "Event" in intent["node_types"]):
         intent["date_from"] = date.today()
@@ -187,6 +236,14 @@ async def answer_question(question: str, k: int = 24) -> dict[str, Any]:
                 "intent": _intent_out(intent),
             }
         ids = [str(n["id"]) for n in nodes]
+        # Multi-hop graph expansion (analytical/factual only — not enumeration):
+        # follow edges out from the vector seeds to pull in connected facts.
+        if not list_mode:
+            ids = await _expand(conn, ids, max_total=40)
+            nodes = await conn.fetch(
+                f"SELECT {_NODE_COLS} FROM nodes WHERE id = ANY($1::uuid[]) AND valid_to IS NULL",
+                ids,
+            )
         edges = await conn.fetch(
             """
             SELECT id, edge_type, from_node_id, to_node_id, properties, source
@@ -259,8 +316,14 @@ async def analyze_node(node_id: str, lens: str, k: int = 20) -> dict[str, Any]:
             """,
             node_id, k,
         )
-        nodes = [dict(anchor)] + [dict(n) for n in neighbours]
-        ids = [str(n["id"]) for n in nodes]
+        seed_ids = [str(anchor["id"])] + [str(n["id"]) for n in neighbours]
+        # graph-expand from the anchor + its semantic neighbours
+        ids = await _expand(conn, seed_ids, max_total=40)
+        nodes = await conn.fetch(
+            f"SELECT {_NODE_COLS} FROM nodes WHERE id = ANY($1::uuid[]) AND valid_to IS NULL",
+            ids,
+        )
+        nodes = [dict(n) for n in nodes]
         edges = await conn.fetch(
             """
             SELECT id, edge_type, from_node_id, to_node_id, properties, source
