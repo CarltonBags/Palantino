@@ -29,9 +29,11 @@ class Settings(BaseSettings):
     anthropic_api_key: str = ""
     anthropic_base_url: str = "https://api.anthropic.com/v1"
     anthropic_model: str = "claude-sonnet-4-6"
+    anthropic_fast_model: str = "claude-haiku-4-5-20251001"
     deepseek_api_key: str = ""
     deepseek_base_url: str = "https://api.deepseek.com"
-    deepseek_model: str = "deepseek-chat"
+    deepseek_model: str = "deepseek-v4-pro"  # main reasoning / answers
+    deepseek_fast_model: str = "deepseek-v4-flash"  # cheap pre-pass (query intent)
 
     # Embeddings (semantic layer). Provider is swappable; OpenAI is the default.
     openai_api_key: str = ""

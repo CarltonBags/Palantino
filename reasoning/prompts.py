@@ -163,3 +163,35 @@ Relevante Fakten aus dem Wissensgraphen (semantisch zur Frage gefunden):
 
 Beantworte die Frage anhand dieser Fakten.
 """
+
+
+# ── Query intent extraction (hybrid retrieval pre-pass) ─────────────────────────
+
+QUERY_INTENT_SYSTEM = """\
+Du extrahierst aus einer Nutzerfrage strukturierte Suchparameter für einen
+Wissensgraphen der Stadt Dortmund. Antworte ausschließlich mit validem JSON.
+"""
+
+QUERY_INTENT_PROMPT = """\
+Heutiges Datum: {today}.
+
+Frage: {question}
+
+Gib NUR dieses JSON zurück:
+{{
+  "search_text": "<knappe Suchphrase auf Deutsch, auf die Kernabsicht fokussiert; behalte Eigennamen, Stadtteile und Themen, entferne Füllwörter>",
+  "node_types": [<0 oder mehr aus: "AgendaItem","Resolution","Meeting","Event","Tender","POI","Organization","Road","GeoArea">],
+  "date_from": "<YYYY-MM-DD oder null>",
+  "date_to": "<YYYY-MM-DD oder null>"
+}}
+
+Regeln:
+- node_types nur setzen, wenn die Frage klar einen Typ meint:
+  Ratsbeschlüsse/Anträge -> ["Resolution","AgendaItem"]; Sitzungen -> ["Meeting"];
+  Veranstaltungen/Events/Nachrichten -> ["Event"]; Ausschreibungen/Vergaben -> ["Tender"];
+  Geschäfte/Orte/Einrichtungen -> ["POI"]; Firmen/Organisationen -> ["Organization"];
+  Straßen -> ["Road"]. Sonst [].
+- Datumsbereich nur bei klarer Zeitangabe (z.B. "2023" -> 2023-01-01 bis 2023-12-31,
+  "seit 2022" -> 2022-01-01 bis null). Sonst beide null.
+- search_text immer ausfüllen. Nur valides JSON, kein weiterer Text.
+"""
