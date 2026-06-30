@@ -21,6 +21,9 @@ Rules:
   Never characterize motives or personality.
 - Return structured JSON: a list of insights, each with type, description, evidence (node/edge IDs),
   confidence (0-1), and a reasoning_trace.
+- The "description" must be concise STRUCTURED Markdown, not one block: a short
+  bold lead sentence, then 2–4 brief bullet points (e.g. Beteiligte, Mechanismus,
+  Umsetzung). Use "\\n" for line breaks so the JSON stays valid.
 - Report your honest confidence (0-1); calibrate it, don't inflate. Do not return
   anything below 0.5 (the system filters the rest by type).
 - Language: write every human-readable field (title, description, reasoning_trace)

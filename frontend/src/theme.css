@@ -329,10 +329,35 @@ a { color: var(--accent); }
 
 /* top-level insights cards */
 .insight-card {
-  background: var(--panel); border: 1px solid var(--border); border-radius: 12px;
-  padding: 14px 16px; margin-bottom: 12px;
+  background: var(--panel); border: 1px solid var(--border);
+  border-left: 3px solid var(--accent); border-radius: 12px;
+  padding: 15px 18px; margin-bottom: 12px;
 }
-.insight-card .it { font-weight: 700; }
+.ic-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; }
+.ic-type {
+  display: inline-flex; align-items: center; gap: 7px;
+  font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em;
+}
+.ic-conf {
+  font-size: 12px; font-weight: 700; color: var(--muted);
+  background: var(--panel-2); border: 1px solid var(--border);
+  border-radius: 999px; padding: 2px 10px;
+}
+.ic-title { font-size: 16px; font-weight: 700; line-height: 1.35; margin-bottom: 6px; }
+.ic-desc { font-size: 14px; }
+.ic-reason {
+  margin-top: 10px; font-size: 13px; color: var(--muted);
+  background: var(--panel-2); border-radius: 8px; padding: 8px 11px;
+}
+.ic-label {
+  display: block; font-size: 10px; text-transform: uppercase; letter-spacing: 0.06em;
+  color: var(--muted); margin-bottom: 4px; font-weight: 700;
+}
+.ic-belege { margin-top: 10px; }
+.ic-actions {
+  display: flex; gap: 8px; margin-top: 12px; padding-top: 11px;
+  border-top: 1px solid var(--border);
+}
 .scan-group { margin-bottom: 16px; }
 .scan-group-head {
   font-size: 12px; text-transform: uppercase; letter-spacing: 0.06em;
