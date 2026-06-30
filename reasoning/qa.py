@@ -132,17 +132,21 @@ async def _retrieve(
         filters.append(f"n.valid_from < ({add(intent['date_to'])}::date + INTERVAL '1 day')")
     limit_ph = add(k)
     order = "n.valid_from ASC NULLS LAST" if list_mode else "e.embedding <=> $1::vector"
-    return await conn.fetch(
-        f"""
+    sql = f"""
         SELECT n.id, n.node_type, n.label, n.properties, n.source, n.source_url, n.valid_from
         FROM node_embeddings e
         JOIN nodes n ON n.id = e.node_id
         WHERE {' AND '.join(filters)}
         ORDER BY {order}
         LIMIT {limit_ph}
-        """,
-        *params,
-    )
+        """
+    if list_mode:
+        return await conn.fetch(sql, *params)
+    # filtered ANN → iterative scan so a type/date filter doesn't starve results
+    async with conn.transaction():
+        await conn.execute("SET LOCAL hnsw.iterative_scan = 'relaxed_order'")
+        await conn.execute("SET LOCAL hnsw.ef_search = 200")
+        return await conn.fetch(sql, *params)
 
 
 # Don't fan out THROUGH these hub types — a district links to ~all co-located
@@ -193,26 +197,52 @@ async def _expand(conn: Any, seed_ids: list[str], max_total: int = 40, hops: int
 
 
 async def _diverse_seeds(
-    conn: Any, qvec: list[float], k: int, pool_size: int = 60, lam: float = 0.55
+    conn: Any, qvec: list[float], k: int, intent: dict[str, Any] | None = None,
+    pool_size: int = 80, lam: float = 0.55,
 ) -> list[dict[str, Any]]:
     """
     MMR seed selection for BROAD analytical queries. Pure KNN on a generic query
     ("Synergien für die Stadt") deterministically returns the same densest cluster
-    every time → repetitive answers. Instead pull a larger relevance pool, pick a
+    every time → repetitive answers. Instead pull a larger relevance pool (scoped
+    by the same filters, e.g. node_types=[POI,Organization] for leads), pick a
     RANDOM first seed from the top (rotation across asks), then greedily add seeds
     that are relevant but dissimilar to those already chosen (MMR → breadth).
     """
-    rows = await conn.fetch(
-        f"""
-        SELECT {_NODE_COLS}, e.embedding::text AS emb
-        FROM node_embeddings e
-        JOIN nodes n ON n.id = e.node_id
-        WHERE n.valid_to IS NULL
-        ORDER BY e.embedding <=> $1::vector
-        LIMIT $2
-        """,
-        to_pgvector(qvec), pool_size,
-    )
+    filters = ["n.valid_to IS NULL"]
+    params: list[Any] = [to_pgvector(qvec)]
+
+    def add(value: Any) -> str:
+        params.append(value)
+        return f"${len(params)}"
+
+    if intent:
+        if intent.get("node_types"):
+            filters.append(f"n.node_type = ANY({add(intent['node_types'])}::text[])")
+        if intent.get("category"):
+            filters.append(f"n.properties->>'category' ILIKE {add('%' + intent['category'] + '%')}")
+        if intent.get("date_from"):
+            filters.append(f"n.valid_from >= {add(intent['date_from'])}")
+        if intent.get("date_to"):
+            filters.append(f"n.valid_from < ({add(intent['date_to'])}::date + INTERVAL '1 day')")
+    params.append(pool_size)
+    # Filtered ANN: without iterative scan, HNSW returns the globally-nearest
+    # vectors THEN applies the filter — so a type filter (e.g. POI) can yield ~0
+    # rows when the nearest are another type. pgvector 0.8 iterative scan keeps
+    # searching until LIMIT rows pass the filter.
+    async with conn.transaction():
+        await conn.execute("SET LOCAL hnsw.iterative_scan = 'relaxed_order'")
+        await conn.execute("SET LOCAL hnsw.ef_search = 200")
+        rows = await conn.fetch(
+            f"""
+            SELECT {_NODE_COLS}, e.embedding::text AS emb
+            FROM node_embeddings e
+            JOIN nodes n ON n.id = e.node_id
+            WHERE {' AND '.join(filters)}
+            ORDER BY e.embedding <=> $1::vector
+            LIMIT ${len(params)}
+            """,
+            *params,
+        )
     if not rows:
         return []
     import numpy as np
@@ -276,19 +306,28 @@ async def answer_question(question: str, k: int = 24, lens_override: str | None 
     if list_mode and not intent["date_from"] and (intent["category"] or "Event" in intent["node_types"]):
         intent["date_from"] = date.today()
 
+    # Leads = business development: scope to real business actors, not news, so the
+    # retrieval surfaces actual prospects (POIs/Orgs) instead of editorial roundups.
+    if intent["lens"] == "leads" and not intent["node_types"]:
+        intent["node_types"] = ["POI", "Organization"]
+
     qvec = (await embed_texts([intent["search_text"]]))[0]
     lit = to_pgvector(qvec)
 
     has_filters = bool(
         intent["node_types"] or intent["category"] or intent["date_from"] or intent["date_to"]
     )
-    # Broad analytical ask (a lens, no narrowing filters) → diversify the seeds
-    # (MMR + random anchor) so it doesn't keep returning the same dense cluster.
-    broad = intent["lens"] != "factual" and not has_filters and not list_mode
+    # Diversify (MMR + random anchor) for exploratory analytical asks so they don't
+    # keep returning the same dense cluster: any broad lens, and always leads
+    # (inherently exploratory, but scoped to its business node_types via intent).
+    diversify = (
+        intent["lens"] != "factual" and not list_mode
+        and (not has_filters or intent["lens"] == "leads")
+    )
     k_eff = 60 if list_mode else k
     async with get_conn() as conn:
-        if broad:
-            nodes = await _diverse_seeds(conn, qvec, k_eff)
+        if diversify:
+            nodes = await _diverse_seeds(conn, qvec, k_eff, intent)
         else:
             nodes = await _retrieve(conn, lit, intent, k_eff, use_filters=has_filters, list_mode=list_mode)
             # If filters were too narrow and found nothing, retry unfiltered + semantic.
