@@ -57,14 +57,20 @@ def parse_club(block_html: str) -> dict[str, Any] | None:
     lines = [ln.strip() for ln in text.split("\n") if ln.strip()]
 
     addr_street = addr_postcode = addr_city = None
-    for ln in lines:
+    # the address line is the one carrying a 5-digit PLZ (not the Tel line)
+    plz_idx = next(
+        (i for i, ln in enumerate(lines) if _PLZ.search(ln) and not ln.lower().startswith("tel")),
+        None,
+    )
+    if plz_idx is not None:
+        ln = lines[plz_idx]
         pm = _PLZ.search(ln)
-        if pm and "," in ln:  # "Street 7, 44149 Dortmund"
-            street_part, _, loc = ln.partition(",")
-            addr_street = street_part.strip()
-            addr_postcode = pm.group(1)
-            addr_city = loc.replace(pm.group(1), "").strip() or "Dortmund"
-            break
+        addr_postcode = pm.group(1)
+        addr_city = ln[pm.end():].strip(" ,.") or "Dortmund"
+        if "," in ln:  # "Street 7, 44149 Dortmund"
+            addr_street = ln.split(",")[0].strip()
+        elif plz_idx > 0:  # street sits on the previous line
+            addr_street = lines[plz_idx - 1].strip() or None
 
     phone = None
     for ln in lines:
@@ -100,21 +106,25 @@ class SSBDortmundConnector(BaseConnector):
     async def fetch(self, checkpoint: dict[str, Any] | None = None) -> AsyncGenerator[Any, None]:
         seen: set[str] = set()
         for letter in _LETTERS:
-            try:
-                resp = await self._get(_INDEX.format(letter=letter))
-            except Exception as exc:  # one bad page shouldn't abort the crawl
-                logger.warning("ssb letter %s failed: %s", letter, exc)
-                continue
-            # split the listing into per-club blocks (each starts at an <h2>)
-            parts = re.split(r"(?=<h2)", resp.text)
-            for part in parts:
-                if "?id=" not in part or "mailto:" not in part:
-                    continue
-                club = parse_club(part)
-                if club and club["source_id"] not in seen:
-                    seen.add(club["source_id"])
-                    yield part  # raw block → normalize re-parses (testable)
-            await asyncio.sleep(1.0)  # be polite
+            for page in range(1, 21):  # paginated via &show=N; cap for safety
+                try:
+                    resp = await self._get(_INDEX.format(letter=letter) + f"&show={page}")
+                except Exception as exc:  # one bad page shouldn't abort the crawl
+                    logger.warning("ssb %s p%d failed: %s", letter, page, exc)
+                    break
+                added = 0
+                # split the listing into per-club blocks (each starts at an <h2>)
+                for part in re.split(r"(?=<h2)", resp.text):
+                    if "?id=" not in part:  # not a club block (email is optional)
+                        continue
+                    club = parse_club(part)
+                    if club and club["source_id"] not in seen:
+                        seen.add(club["source_id"])
+                        added += 1
+                        yield part  # raw block → normalize re-parses (testable)
+                await asyncio.sleep(1.0)  # be polite
+                if added == 0:  # no new clubs on this page → letter done
+                    break
 
     def normalize(self, raw: Any) -> dict[str, Any]:
         return parse_club(raw) or {}
