@@ -208,8 +208,11 @@ async def answer_question(question: str, k: int = 24) -> dict[str, Any]:
         system = ANALYSIS_SYSTEM_PROMPTS[lens]
         prompt = ANALYSIS_PROMPT.format(question=question, subgraph_json=subgraph, today=today)
     # Reasoning models (e.g. deepseek-v4-pro) spend the budget on hidden
-    # reasoning before the answer, so give ample headroom or `content` truncates.
-    answer = await complete(system, prompt, max_tokens=4000)
+    # reasoning before the answer, so give ample headroom or `content` truncates
+    # to empty. 8000 makes that rare; the guard below keeps the UI non-blank.
+    answer = await complete(system, prompt, max_tokens=8000)
+    if not answer.strip():
+        answer = "_Die Antwort konnte nicht erzeugt werden — bitte erneut versuchen._"
 
     citations = [
         {
@@ -273,7 +276,9 @@ async def analyze_node(node_id: str, lens: str, k: int = 20) -> dict[str, Any]:
     prompt = ANALYSIS_PROMPT.format(
         question=question, subgraph_json=subgraph, today=date.today().isoformat()
     )
-    answer = await complete(ANALYSIS_SYSTEM_PROMPTS[lens], prompt, max_tokens=4000)
+    answer = await complete(ANALYSIS_SYSTEM_PROMPTS[lens], prompt, max_tokens=8000)
+    if not answer.strip():
+        answer = "_Die Analyse konnte nicht erzeugt werden — bitte erneut versuchen._"
     citations = [
         {
             "id": str(n["id"]), "label": n["label"], "node_type": n["node_type"],

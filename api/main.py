@@ -285,7 +285,7 @@ async def get_insights(req: InsightRequest) -> dict[str, Any]:
     template = INEFFICIENCY_PROMPT if req.insight_type == "inefficiency" else SYNERGY_PROMPT
     prompt = template.format(subgraph_json=subgraph, today=date.today().isoformat())
 
-    raw_text = await complete(SYSTEM_PROMPT, prompt, max_tokens=4000)
+    raw_text = await complete(SYSTEM_PROMPT, prompt, max_tokens=8000)
 
     # Tolerate ```json fences (providers vary) before parsing.
     text = raw_text.strip()
