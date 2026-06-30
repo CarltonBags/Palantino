@@ -30,9 +30,10 @@ logger = logging.getLogger(__name__)
 _DUMP_URL = "https://daten.offeneregister.de/de_companies_ocdata.jsonl.bz2"
 _PLZ = re.compile(r"\b(\d{5})\b")
 _RECHTSFORM = [
-    "gGmbH", "GmbH & Co. KG", "GmbH", "UG (haftungsbeschränkt)", "UG",
-    "AG & Co. KG", "AG", "e. V.", "e.V.", "eG", "KGaA", "KG", "OHG", "GbR",
-    "SE", "Stiftung", "Verein",
+    "gGmbH", "GmbH & Co. KG", "GmbH", "Gesellschaft mit beschränkter Haftung",
+    "UG (haftungsbeschränkt)", "UG", "AG & Co. KG", "Aktiengesellschaft", "AG",
+    "e. V.", "e.V.", "eingetragene Genossenschaft", "eG", "KGaA", "KG", "OHG",
+    "GbR", "SE", "Stiftung", "Verein",
 ]
 
 
@@ -64,30 +65,39 @@ class OffeneRegisterConnector(BaseConnector):
     shape = ConnectorShape.REFERENCE
     source_name = "offeneregister"
 
+    def _dortmund_record(self, line: bytes) -> dict[str, Any] | None:
+        if b"Dortmund" not in line:  # cheap prefilter — skip JSON parse
+            return None
+        try:
+            rec = json.loads(line)
+        except json.JSONDecodeError:
+            return None
+        return rec if is_dortmund(rec.get("registered_address", "")) else None
+
     async def fetch(self, checkpoint: dict[str, Any] | None = None) -> AsyncGenerator[Any, None]:
+        # The dump is a MULTI-STREAM bz2 (concatenated blocks); roll a fresh
+        # decompressor at each stream boundary and feed it the leftover bytes.
         dec = bz2.BZ2Decompressor()
         tail = b""
         async with self._http.stream("GET", _DUMP_URL, timeout=600.0) as resp:
             resp.raise_for_status()
             async for chunk in resp.aiter_bytes(1 << 16):
-                data = tail + dec.decompress(chunk)
-                *lines, tail = data.split(b"\n")
-                for ln in lines:
-                    if b"Dortmund" not in ln:  # cheap prefilter — skip JSON parse
-                        continue
-                    try:
-                        rec = json.loads(ln)
-                    except json.JSONDecodeError:
-                        continue
-                    if is_dortmund(rec.get("registered_address", "")):
-                        yield rec
-        if tail and b"Dortmund" in tail:
-            try:
-                rec = json.loads(tail)
-                if is_dortmund(rec.get("registered_address", "")):
-                    yield rec
-            except json.JSONDecodeError:
-                pass
+                while chunk:
+                    out = dec.decompress(chunk)
+                    data = tail + out
+                    *lines, tail = data.split(b"\n")
+                    for ln in lines:
+                        rec = self._dortmund_record(ln)
+                        if rec is not None:
+                            yield rec
+                    if dec.eof:
+                        chunk = dec.unused_data
+                        dec = bz2.BZ2Decompressor()
+                    else:
+                        chunk = b""
+        rec = self._dortmund_record(tail)
+        if rec is not None:
+            yield rec
 
     def normalize(self, raw: Any) -> dict[str, Any]:
         name = raw.get("name") or ""
