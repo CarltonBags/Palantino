@@ -189,6 +189,8 @@ export const api = {
   },
   analyzeNode: (nodeId: string, lens: string) =>
     post<ChatAnswer>(`/chat/node`, { node_id: nodeId, lens }),
+  discuss: (nodeIds: string[], messages: { role: string; content: string }[]) =>
+    post<ChatAnswer>(`/chat/discuss`, { node_ids: nodeIds, messages }),
   rateChat: (id: string, rating: number) =>
     post<{ id: string; rating: number }>(`/chat/${id}/rating`, { rating }),
   chatHistory: (opts: { minRating?: number; lens?: string } = {}) => {

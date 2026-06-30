@@ -138,6 +138,11 @@ export default function ChatView({
                 {t.a.id && (
                   <RatingBar value={t.rating ?? null} onRate={(n) => rate(i, t.a!.id!, n)} />
                 )}
+                <FollowupThread
+                  originalQ={t.q}
+                  originalAnswer={t.a.answer}
+                  nodeIds={t.a.citations.map((c) => c.id)}
+                />
               </div>
             )}
           </div>
@@ -171,6 +176,93 @@ export default function ChatView({
       </div>
 
       {picker && <EventPicker onPick={analyzeEvent} onClose={() => setPicker(false)} />}
+    </div>
+  );
+}
+
+interface FollowupItem {
+  q: string;
+  a?: string;
+  pending?: boolean;
+  err?: string;
+}
+
+function FollowupThread({
+  originalQ,
+  originalAnswer,
+  nodeIds,
+}: {
+  originalQ: string;
+  originalAnswer: string;
+  nodeIds: string[];
+}) {
+  const [items, setItems] = useState<FollowupItem[]>([]);
+  const [q, setQ] = useState("");
+  const [open, setOpen] = useState(false);
+  const busy = items.some((i) => i.pending);
+
+  async function ask() {
+    const question = q.trim();
+    if (!question || busy) return;
+    setQ("");
+    const idx = items.length;
+    setItems((x) => [...x, { q: question, pending: true }]);
+    const messages = [
+      { role: "user", content: originalQ },
+      { role: "assistant", content: originalAnswer },
+      ...items.flatMap((i) =>
+        i.a ? [{ role: "user", content: i.q }, { role: "assistant", content: i.a }] : [],
+      ),
+      { role: "user", content: question },
+    ];
+    try {
+      const r = await api.discuss(nodeIds, messages);
+      setItems((x) => x.map((it, i) => (i === idx ? { q: it.q, a: r.answer } : it)));
+    } catch (e) {
+      setItems((x) => x.map((it, i) => (i === idx ? { q: it.q, err: String(e) } : it)));
+    }
+  }
+
+  if (!open && items.length === 0) {
+    return (
+      <button className="followup-open" onClick={() => setOpen(true)}>
+        ↳ Vertiefen
+      </button>
+    );
+  }
+
+  return (
+    <div className="followups">
+      {items.map((it, i) => (
+        <div key={i}>
+          <div className="bubble user fu">{it.q}</div>
+          {it.pending && (
+            <div className="bubble assistant fu">
+              <span className="typing"><span /> <span /> <span /></span>
+            </div>
+          )}
+          {it.err && <div className="bubble assistant fu err">{it.err}</div>}
+          {it.a && (
+            <div className="bubble assistant fu">
+              <div className="md">
+                <ReactMarkdown remarkPlugins={[remarkGfm]}>{it.a}</ReactMarkdown>
+              </div>
+            </div>
+          )}
+        </div>
+      ))}
+      <div className="followup-input">
+        <input
+          type="text"
+          placeholder="Nachfragen, um diese Erkenntnis zu vertiefen…"
+          value={q}
+          onChange={(e) => setQ(e.target.value)}
+          onKeyDown={(e) => e.key === "Enter" && ask()}
+        />
+        <button onClick={ask} disabled={busy || !q.trim()}>
+          {busy ? "…" : "Senden"}
+        </button>
+      </div>
     </div>
   );
 }

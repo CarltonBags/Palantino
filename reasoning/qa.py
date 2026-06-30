@@ -26,6 +26,8 @@ from reasoning.llm import complete
 from reasoning.prompts import (
     ANALYSIS_PROMPT,
     ANALYSIS_SYSTEM_PROMPTS,
+    DISCUSS_PROMPT,
+    DISCUSS_SYSTEM_PROMPT,
     QA_PROMPT,
     QA_SYSTEM_PROMPT,
     QUERY_INTENT_PROMPT,
@@ -459,3 +461,50 @@ async def analyze_node(node_id: str, lens: str, k: int = 20) -> dict[str, Any]:
         "question": question,
         "intent": {"lens": lens, "anchor": anchor["label"]},
     }
+
+
+async def discuss(node_ids: list[str], messages: list[dict[str, str]]) -> dict[str, Any]:
+    """
+    Follow-up conversation grounded in a previously-found result. Reasons over the
+    SAME evidence subgraph (node_ids from that answer) + the chat transcript, so
+    the user can deepen a specific synergy/lead/finding without re-retrieving.
+    """
+    ids = [str(i) for i in (node_ids or [])][:60]
+    if not ids or not messages:
+        return {"answer": "Kein Kontext zum Vertiefen.", "citations": []}
+
+    async with get_conn() as conn:
+        nodes = await conn.fetch(
+            f"SELECT {_NODE_COLS} FROM nodes WHERE id = ANY($1::uuid[]) AND valid_to IS NULL",
+            ids,
+        )
+        edges = await conn.fetch(
+            """
+            SELECT id, edge_type, from_node_id, to_node_id, properties, source
+            FROM edges
+            WHERE from_node_id = ANY($1::uuid[]) AND to_node_id = ANY($1::uuid[])
+              AND valid_to IS NULL
+            """,
+            ids,
+        )
+
+    transcript = "\n".join(
+        f"{'Nutzer' if m.get('role') == 'user' else 'Assistent'}: {m.get('content', '')}"
+        for m in messages
+    )
+    prompt = DISCUSS_PROMPT.format(
+        subgraph_json=format_subgraph([dict(n) for n in nodes], [dict(e) for e in edges]),
+        transcript=transcript,
+        today=date.today().isoformat(),
+    )
+    answer = await complete(DISCUSS_SYSTEM_PROMPT, prompt, max_tokens=8000)
+    if not answer.strip():
+        answer = "_Die Antwort konnte nicht erzeugt werden — bitte erneut versuchen._"
+    citations = [
+        {
+            "id": str(n["id"]), "label": n["label"], "node_type": n["node_type"],
+            "source": n["source"], "source_url": n["source_url"],
+        }
+        for n in nodes
+    ]
+    return {"answer": answer, "citations": citations}

@@ -271,6 +271,33 @@ Führe deine Analyse anhand dieser Fakten durch und nenne die Quellen.
 """
 
 
+# ── Follow-up discussion of a found result ──────────────────────────────────────
+
+DISCUSS_SYSTEM_PROMPT = """\
+Du vertiefst gemeinsam mit der/dem Nutzer:in eine zuvor gefundene Erkenntnis über
+Dortmund (z.B. eine Synergie, Ineffizienz oder einen Akquise-Vorschlag).
+Regeln:
+- Stütze dich auf die bereitgestellten Fakten (Knoten + Kanten mit Quelle) UND den
+  bisherigen Gesprächsverlauf. Erfinde nichts; geht etwas nicht aus den Fakten
+  hervor, sage das offen und trenne Beleg von Annahme.
+- Über reale benannte Personen/Amtsträger nur belegte Beobachtungen.
+- Antworte auf Deutsch, konkret und im Gesprächston; gehe direkt auf die letzte
+  Nachfrage ein und baue auf dem bisherigen Verlauf auf. Nenne genutzte Quellen.
+"""
+
+DISCUSS_PROMPT = """\
+Aktuelles Datum: {today}.
+
+Fakten zur besprochenen Erkenntnis (Beleg-Subgraph):
+{subgraph_json}
+
+Bisheriger Gesprächsverlauf:
+{transcript}
+
+Beantworte die letzte Nachfrage und vertiefe die Erkenntnis anhand der Fakten.
+"""
+
+
 # ── Query intent extraction (hybrid retrieval pre-pass) ─────────────────────────
 
 QUERY_INTENT_SYSTEM = """\
