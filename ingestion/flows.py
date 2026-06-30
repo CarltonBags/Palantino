@@ -371,6 +371,24 @@ async def run_nordstadtblogger() -> None:
     await _run_node_connector(NordstadtbloggerConnector(), get_run_logger())
 
 
+# ── Embeddings (semantic layer) ───────────────────────────────────────────────
+
+@flow(name="embed-nodes", log_prints=True)
+async def run_embed_nodes() -> None:
+    from embeddings.backfill import embed_nodes
+
+    log = get_run_logger()
+    run_id = await _start_run("embeddings")
+    try:
+        counts = await embed_nodes()
+        log.info("embed-nodes done: %s", counts)
+        await _finish_run(run_id, "embeddings", counts["embedded"], 0)
+    except Exception as exc:
+        log.error("embed-nodes failed: %s", exc, exc_info=True)
+        await _finish_run(run_id, "embeddings", 0, 0, error=str(exc))
+        raise
+
+
 @flow(name="lanuv-air", log_prints=True)
 async def run_lanuv_air() -> None:
     await _run_node_connector(LanuvAirConnector(), get_run_logger())
@@ -875,5 +893,6 @@ if __name__ == "__main__":
         # run_gtfs_realtime.to_deployment(name="gtfs-realtime-10min", cron="*/10 * * * *"),
         # resolution + reasoning — after the daily ingests settle
         run_text_linking.to_deployment(name="text-linking-daily", cron="30 7 * * *"),
+        run_embed_nodes.to_deployment(name="embed-nodes-daily", cron="45 7 * * *"),
         run_insight_scan.to_deployment(name="insight-scan-daily", cron="0 8 * * *"),
     )
