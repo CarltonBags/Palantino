@@ -121,9 +121,11 @@ def dedup_candidates(candidates: list[Candidate]) -> list[Candidate]:
 def derive_title(insight: dict[str, Any]) -> str:
     """Use an explicit title if the model gave one, else the first sentence."""
     if insight.get("title"):
-        return str(insight["title"])[:200]
+        return str(insight["title"]).strip().lstrip("#*-• ").strip()[:200]
+    # fallback: first non-empty line of the description, stripped of markdown
     desc = str(insight.get("description", "")).strip()
-    return (desc.split(". ")[0] or "Insight")[:200]
+    first = next((ln.strip().lstrip("#*-• ").strip() for ln in desc.splitlines() if ln.strip()), "")
+    return (first.split(". ")[0] or "Erkenntnis")[:140]
 
 
 # ── candidate generators (DB) ───────────────────────────────────────────────────
