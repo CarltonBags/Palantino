@@ -127,15 +127,24 @@ async def _global_pairs(pool: int = 40) -> list[tuple[dict, dict, str]]:
 
     # Favour complementary (need↔offer = real audience/occasion fit) over pure
     # proximity, which produces near-but-incompatible pairs.
+    from collections import Counter
+
     cands = dedup_candidates(
         await complementary_candidates(limit=pool)
         + await structural_synergy_candidates(limit=max(pool // 2, 8))
     )
     pairs = []
+    used: Counter[str] = Counter()
     for c in cands:
         p = [nd for nd in c.nodes if nd["node_type"] != "GeoArea"][:2]
-        if len(p) >= 2:
-            pairs.append((p[0], p[1], c.note))
+        if len(p) < 2:
+            continue
+        # cap node reuse so a few venues/POIs (e.g. the nearest gym) don't recur
+        if any(used[str(nd["id"])] >= 2 for nd in p):
+            continue
+        for nd in p:
+            used[str(nd["id"])] += 1
+        pairs.append((p[0], p[1], c.note))
     return pairs
 
 

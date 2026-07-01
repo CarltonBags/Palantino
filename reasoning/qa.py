@@ -333,28 +333,81 @@ def _intent_out(intent: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+_DEEP_TYPES = ["Event", "POI", "Organization"]
+
+
 async def _deep_synergy_pairs(intent: dict[str, Any]) -> list[tuple[dict, dict, str]]:
-    """Query-scoped pairs: take the (working) global proximity/complementary
-    candidate pairs and rank them by relevance to the question, so Tiefensuche
-    researches the pairs that actually fit what the user asked."""
-    import numpy as np
+    """Query-ANCHORED pairs. Find the entities the question is about (e.g. the
+    Neven-Subotic-Stiftung), then for each build candidate partners from BOTH
+    semantic relatedness (mission fit) and proximity — every pair contains the
+    queried actor. Cap how often any node reappears so a few venues/POIs don't
+    dominate every result."""
+    from collections import Counter
 
-    from reasoning.synergy_finder import _global_pairs
+    qvec = (await embed_texts([intent["search_text"]]))[0]
+    qlit = to_pgvector(qvec)
+    pairs: list[tuple[dict, dict, str]] = []
+    used: Counter[str] = Counter()
 
-    pairs = await _global_pairs(pool=45)
-    if not pairs:
-        return []
-    qvec = np.array((await embed_texts([intent["search_text"]]))[0], dtype=float)
-    qvec /= np.linalg.norm(qvec) or 1.0
-    texts = [f"{a['label']} · {b['label']} · {a.get('node_type')} {b.get('node_type')}" for a, b, _ in pairs]
-    vecs = await embed_texts(texts)
-    scored = []
-    for pr, v in zip(pairs, vecs):
-        vv = np.array(v, dtype=float)
-        vv /= np.linalg.norm(vv) or 1.0
-        scored.append((float(qvec @ vv), pr))
-    scored.sort(key=lambda x: -x[0])
-    return [pr for _, pr in scored[:30]]
+    async with get_conn() as conn:
+        async with conn.transaction():
+            await conn.execute("SET LOCAL hnsw.iterative_scan = 'relaxed_order'")
+            await conn.execute("SET LOCAL hnsw.ef_search = 200")
+            # anchors: the entities the query is actually about
+            anchors = await conn.fetch(
+                f"""SELECT {_NODE_COLS}, (n.geom IS NOT NULL) AS has_geom
+                    FROM node_embeddings e JOIN nodes n ON n.id = e.node_id
+                    WHERE n.valid_to IS NULL AND n.node_type = ANY($2::text[])
+                    ORDER BY e.embedding <=> $1::vector LIMIT 4""",
+                qlit, _DEEP_TYPES,
+            )
+            for anchor in anchors:
+                aid = str(anchor["id"])
+                # semantic partners: nearest to THIS anchor, different node, not yet connected
+                sem = await conn.fetch(
+                    f"""SELECT {_NODE_COLS} FROM node_embeddings e JOIN nodes n ON n.id = e.node_id
+                        WHERE n.valid_to IS NULL AND n.node_type = ANY($2::text[]) AND n.id <> $1::uuid
+                          AND NOT EXISTS (SELECT 1 FROM edges g WHERE g.valid_to IS NULL
+                              AND ((g.from_node_id = $1::uuid AND g.to_node_id = n.id)
+                                OR (g.from_node_id = n.id AND g.to_node_id = $1::uuid)))
+                        ORDER BY e.embedding <=> (SELECT embedding FROM node_embeddings WHERE node_id = $1::uuid)
+                        LIMIT 6""",
+                    aid, _DEEP_TYPES,
+                )
+                partners = [dict(r) for r in sem]
+                # complementary partners: need↔offer match on the resource layer
+                comp = await conn.fetch(
+                    """SELECT DISTINCT n.id, n.node_type, n.label, n.properties, n.source,
+                              n.source_url, n.valid_from
+                       FROM node_resources ar
+                       JOIN node_resources br ON br.tag = ar.tag AND br.kind <> ar.kind
+                            AND br.node_id <> ar.node_id
+                       JOIN nodes n ON n.id = br.node_id AND n.valid_to IS NULL
+                       WHERE ar.node_id = $1::uuid LIMIT 4""",
+                    aid,
+                )
+                partners += [dict(r) for r in comp]
+                if anchor.get("has_geom"):
+                    prox = await _structural_partners(conn, [aid], per_seed=3, cap=3)
+                    if prox:
+                        prows = await conn.fetch(
+                            f"SELECT {_NODE_COLS} FROM nodes WHERE id = ANY($1::uuid[]) AND valid_to IS NULL",
+                            prox,
+                        )
+                        partners += [dict(r) for r in prows]
+                added = 0
+                for p in partners:
+                    pid = str(p["id"])
+                    if pid == aid or used[pid] >= 2 or added >= 4:
+                        continue
+                    used[pid] += 1
+                    added += 1
+                    note = (
+                        f"Beide passen zur Anfrage „{intent['search_text']}“: "
+                        f"„{anchor['label']}“ und „{p['label']}“ — bislang unverbunden."
+                    )
+                    pairs.append((dict(anchor), p, note))
+    return pairs
 
 
 async def _deep_synergy_answer(intent: dict[str, Any]) -> dict[str, Any]:
