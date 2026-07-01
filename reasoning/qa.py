@@ -303,6 +303,8 @@ async def _structural_partners(
                   AND pp.node_type <> s.node_type AND pp.id <> s.id
                   AND pp.node_type IN ('POI', 'Event', 'Organization')
                   AND pp.label NOT LIKE 'OSM %'
+                  AND NOT (pp.source = 'offeneregister'
+                           AND coalesce(pp.properties->>'status', '') <> 'currently registered')
                   AND ST_DWithin(s.geom::geography, pp.geom::geography, $2)
                   AND ST_Distance(s.geom::geography, pp.geom::geography) > $3
                   AND NOT EXISTS (
@@ -333,7 +335,25 @@ def _intent_out(intent: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-_DEEP_TYPES = ["Event", "POI", "Organization"]
+# Dissolved Handelsregister companies (or any offeneregister org not currently
+# registered) can't form a synergy — exclude them from every candidate query.
+_ACTIVE = (
+    "NOT (n.source = 'offeneregister' AND coalesce(n.properties->>'status','') <> 'currently registered')"
+)
+_BIZ_KW = (
+    "unternehmen", "firma", "gmbh", "betrieb", "gewerbe", "vergabe", "auftrag",
+    "wirtschaft", "company", "business", "geschäft", "handelsregister", "startup",
+)
+
+
+def _synergy_anchor_types(search_text: str) -> list[str]:
+    """People-connecting synergies live in Events + POIs (venues, clubs, cafés).
+    Handelsregister companies only join when the query is explicitly about business."""
+    t = (search_text or "").lower()
+    types = ["Event", "POI"]
+    if any(k in t for k in _BIZ_KW):
+        types.append("Organization")
+    return types
 
 
 async def _deep_synergy_pairs(intent: dict[str, Any]) -> list[tuple[dict, dict, str]]:
@@ -354,12 +374,13 @@ async def _deep_synergy_pairs(intent: dict[str, Any]) -> list[tuple[dict, dict, 
             await conn.execute("SET LOCAL hnsw.iterative_scan = 'relaxed_order'")
             await conn.execute("SET LOCAL hnsw.ef_search = 200")
             # anchors: the entities the query is actually about
+            types = _synergy_anchor_types(intent["search_text"])
             anchors = await conn.fetch(
                 f"""SELECT {_NODE_COLS}, (n.geom IS NOT NULL) AS has_geom
                     FROM node_embeddings e JOIN nodes n ON n.id = e.node_id
-                    WHERE n.valid_to IS NULL AND n.node_type = ANY($2::text[])
+                    WHERE n.valid_to IS NULL AND n.node_type = ANY($2::text[]) AND {_ACTIVE}
                     ORDER BY e.embedding <=> $1::vector LIMIT 4""",
-                qlit, _DEEP_TYPES,
+                qlit, types,
             )
             for anchor in anchors:
                 aid = str(anchor["id"])
@@ -367,22 +388,23 @@ async def _deep_synergy_pairs(intent: dict[str, Any]) -> list[tuple[dict, dict, 
                 sem = await conn.fetch(
                     f"""SELECT {_NODE_COLS} FROM node_embeddings e JOIN nodes n ON n.id = e.node_id
                         WHERE n.valid_to IS NULL AND n.node_type = ANY($2::text[]) AND n.id <> $1::uuid
+                          AND {_ACTIVE}
                           AND NOT EXISTS (SELECT 1 FROM edges g WHERE g.valid_to IS NULL
                               AND ((g.from_node_id = $1::uuid AND g.to_node_id = n.id)
                                 OR (g.from_node_id = n.id AND g.to_node_id = $1::uuid)))
                         ORDER BY e.embedding <=> (SELECT embedding FROM node_embeddings WHERE node_id = $1::uuid)
                         LIMIT 6""",
-                    aid, _DEEP_TYPES,
+                    aid, types,
                 )
                 partners = [dict(r) for r in sem]
                 # complementary partners: need↔offer match on the resource layer
                 comp = await conn.fetch(
-                    """SELECT DISTINCT n.id, n.node_type, n.label, n.properties, n.source,
+                    f"""SELECT DISTINCT n.id, n.node_type, n.label, n.properties, n.source,
                               n.source_url, n.valid_from
                        FROM node_resources ar
                        JOIN node_resources br ON br.tag = ar.tag AND br.kind <> ar.kind
                             AND br.node_id <> ar.node_id
-                       JOIN nodes n ON n.id = br.node_id AND n.valid_to IS NULL
+                       JOIN nodes n ON n.id = br.node_id AND n.valid_to IS NULL AND {_ACTIVE}
                        WHERE ar.node_id = $1::uuid LIMIT 4""",
                     aid,
                 )
