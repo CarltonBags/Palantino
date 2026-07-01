@@ -40,6 +40,7 @@ from connectors.ods_stats.connector import OdsStatsConnector
 from connectors.oparl.connector import OParlConnector
 from connectors.offeneregister.connector import OffeneRegisterConnector
 from connectors.overpass.connector import OverpassConnector
+from connectors.sozialindikatoren.connector import SozialindikatorenConnector
 from connectors.ssb_dortmund.connector import SSBDortmundConnector
 from connectors.tiefbau_programm.connector import TiefbauProgrammConnector
 from connectors.polizei_rss.connector import PolizeiRssConnector
@@ -393,6 +394,11 @@ async def run_offeneregister() -> None:
 @flow(name="tiefbau-programm", log_prints=True)
 async def run_tiefbau_programm() -> None:
     await _run_node_connector(TiefbauProgrammConnector(), get_run_logger())
+
+
+@flow(name="sozialindikatoren", log_prints=True)
+async def run_sozialindikatoren() -> None:
+    await _run_node_connector(SozialindikatorenConnector(), get_run_logger())
 
 
 # ── Embeddings (semantic layer) ───────────────────────────────────────────────
