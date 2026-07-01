@@ -857,15 +857,17 @@ async def run_text_linking() -> None:
 
 @flow(name="reference-linking", log_prints=True)
 async def run_reference_linking() -> None:
-    """Deterministic register-key joins (planned works ↔ authorising decision)."""
-    from resolution.reference_linker import link_drucksachen
+    """Deterministic register-key joins (works ↔ decision, works ↔ district)."""
+    from resolution.reference_linker import link_drucksachen, link_works_to_districts
 
     log = get_run_logger()
     run_id = await _start_run("reference_linker")
     try:
-        counts = await link_drucksachen()
-        log.info("reference-linking done: %s", counts)
-        await _finish_run(run_id, "reference_linker", 0, counts["edges"])
+        ds = await link_drucksachen()
+        dist = await link_works_to_districts()
+        edges = ds["edges"] + dist["edges"]
+        log.info("reference-linking done: drucksachen=%s district=%s", ds, dist)
+        await _finish_run(run_id, "reference_linker", 0, edges)
     except Exception as exc:
         log.error("reference-linking failed: %s", exc, exc_info=True)
         await _finish_run(run_id, "reference_linker", 0, 0, error=str(exc))

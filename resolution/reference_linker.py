@@ -58,3 +58,43 @@ async def link_drucksachen(limit: int = 20000) -> dict[str, int]:
     logger.info("reference linker (drucksachen): %d matches, %d new edges",
                 counts["matches"], counts["edges"])
     return counts
+
+
+_WORK_DISTRICT_SQL = """
+SELECT cs.id AS cs_id, g.id AS geo_id
+FROM nodes cs
+JOIN nodes g ON g.node_type = 'GeoArea' AND g.properties->>'area_type' = 'stadtbezirk'
+    AND g.valid_to IS NULL
+    AND lower(g.label) = lower(cs.properties->>'stadtbezirk')
+WHERE cs.source = 'opendata_dortmund_tiefbau_programm' AND cs.valid_to IS NULL
+  AND cs.properties->>'stadtbezirk' IS NOT NULL
+  AND NOT EXISTS (
+      SELECT 1 FROM edges e WHERE e.edge_type = 'LOCATED_IN' AND e.valid_to IS NULL
+        AND e.from_node_id = cs.id AND e.to_node_id = g.id)
+LIMIT $1
+"""
+
+
+async def link_works_to_districts(limit: int = 20000) -> dict[str, int]:
+    """Snap planned works (no geometry) to their Stadtbezirk GeoArea by name."""
+    from db.session import get_conn
+    from ingestion.writer import upsert_edge
+    from ontology.edges import located_in
+
+    counts = {"matches": 0, "edges": 0}
+    async with get_conn() as conn:
+        rows = await conn.fetch(_WORK_DISTRICT_SQL, limit)
+        for row in rows:
+            counts["matches"] += 1
+            edge = located_in(
+                from_node_id=UUID(str(row["cs_id"])),
+                to_node_id=UUID(str(row["geo_id"])),
+                source="reference_linker",
+                observed_at=datetime.now(timezone.utc),
+            )
+            _, was_new = await upsert_edge(edge)
+            if was_new:
+                counts["edges"] += 1
+    logger.info("reference linker (works→district): %d matches, %d new edges",
+                counts["matches"], counts["edges"])
+    return counts
