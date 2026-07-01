@@ -111,6 +111,16 @@ export interface StoredInsight {
   scan_id: string | null;
 }
 
+export interface DeepSynergy {
+  title: string;
+  description: string;
+  first_step?: string;
+  reason?: string;
+  partners: string[];
+  evidence_node_ids: string[];
+  researched_websites?: string[];
+  contacts?: string[];
+}
 export interface ChatCitation {
   id: string;
   label: string;
@@ -225,6 +235,8 @@ export const api = {
     post<{ id: string; status: string }>(`/insights/stored/${id}/status`, { status }),
   scanInsights: (mode = "classic") =>
     post<{ status: string }>(`/insights/scan?mode=${mode}`, {}),
+  deepSynergies: (n = 5) =>
+    post<{ synergies: DeepSynergy[] }>(`/synergies/deep`, { n }),
   ingestionStatus: () => get<IngestionRun[]>(`/status/ingestion`),
   sourceCatalog: () => get<SourceCatalogEntry[]>(`/status/sources`),
   resolutionCandidates: (status = "pending") =>
