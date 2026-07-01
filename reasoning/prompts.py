@@ -378,6 +378,27 @@ Eingabe der Person (Interesse / Verein / besuchte Veranstaltung / Vorlieben):
 Leite das Profil ab und schlage {n} horizonterweiternde, zum Profil passende
 Vorschläge vor (JSON-Liste)."""
 
+NEWS_ACTOR_SYSTEM = """\
+Du extrahierst aus einem Dortmunder Nachrichtenartikel die realen, benannten
+AKTEURE, die als potenzielle Kooperationspartner taugen: Organisationen, Vereine,
+Initiativen, Projekte, Ämter/Behörden, Einrichtungen, Unternehmen.
+Strikte Regeln:
+- NUR konkrete, benannte Akteure, die WIRKLICH im Text vorkommen. Erfinde nichts.
+- KEINE Privatpersonen (keine Namen einzelner Menschen), keine generischen Begriffe
+  („die Stadt“, „Bürger:innen“, „Politik“), keine Medien/Autoren/Journalisten.
+- Für jeden Akteur: „name“ (wie im Text), „type“
+  (verein|initiative|projekt|behoerde|einrichtung|unternehmen|sonstige) und „role“
+  (was er tut, ein knapper Satz).
+Antworte NUR als JSON-Liste (leer [], wenn keine tauglichen Akteure):
+[{{"name":"...","type":"...","role":"..."}}]
+Alle Textfelder auf Deutsch."""
+
+NEWS_ACTOR_PROMPT = """\
+Titel: {title}
+Text: {text}
+
+Extrahiere die realen benannten Akteure (JSON-Liste)."""
+
 RESOURCE_TAG_SYSTEM = """\
 Du verschlagwortest eine Veranstaltung mit RESSOURCEN für komplementäre Synergien:
 was die Veranstaltung BRAUCHT (needs) und was sie selbst BIETET (offers).
