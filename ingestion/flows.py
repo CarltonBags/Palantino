@@ -890,6 +890,23 @@ async def run_resolution() -> None:
         raise
 
 
+@flow(name="news-actor-extraction", log_prints=True)
+async def run_actor_extraction() -> None:
+    """Extract real actors (orgs/initiatives) from recent news articles."""
+    from reasoning.actor_extraction import extract_news_actors
+
+    log = get_run_logger()
+    run_id = await _start_run("news_actor_extraction")
+    try:
+        counts = await extract_news_actors(limit=400)
+        log.info("actor extraction done: %s", counts)
+        await _finish_run(run_id, "news_actor_extraction", counts["actors"], counts["mentions"])
+    except Exception as exc:
+        log.error("actor extraction failed: %s", exc, exc_info=True)
+        await _finish_run(run_id, "news_actor_extraction", 0, 0, error=str(exc))
+        raise
+
+
 @flow(name="reference-linking", log_prints=True)
 async def run_reference_linking() -> None:
     """Deterministic register-key joins (works ↔ decision, works ↔ district)."""
