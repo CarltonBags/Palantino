@@ -323,6 +323,26 @@ async def _structural_partners(
     return [str(r["pid"]) for r in rows]
 
 
+async def _complementary_partners(conn: Any, seed_ids: list[str], cap: int = 18) -> list[str]:
+    """Complementary retrieval: partners whose OFFER matches a seed's NEED (or vice
+    versa) on the resource layer — need↔offer fit, not proximity or similarity."""
+    if not seed_ids:
+        return []
+    rows = await conn.fetch(
+        f"""
+        SELECT DISTINCT br.node_id AS pid
+        FROM node_resources ar
+        JOIN node_resources br ON br.tag = ar.tag AND br.kind <> ar.kind
+             AND br.node_id <> ar.node_id
+        JOIN nodes n ON n.id = br.node_id AND n.valid_to IS NULL AND {_ACTIVE}
+        WHERE ar.node_id = ANY($1::uuid[])
+        LIMIT $2
+        """,
+        seed_ids, cap,
+    )
+    return [str(r["pid"]) for r in rows]
+
+
 def _intent_out(intent: dict[str, Any]) -> dict[str, Any]:
     return {
         "lens": intent.get("lens", "factual"),
@@ -528,15 +548,21 @@ async def answer_question(
         and (not has_filters or intent["lens"] == "leads")
     )
     k_eff = 60 if list_mode else k
-    structural = retrieval == "structural" and intent["lens"] in {"synergy", "leads"} and not list_mode
+    lens_synergy = intent["lens"] in {"synergy", "leads"} and not list_mode
+    structural = retrieval == "structural" and lens_synergy
+    complementary = retrieval == "complementary" and lens_synergy
     async with get_conn() as conn:
-        if structural:
-            # query-relevant seeds anchored on geo types (so proximity has something
-            # to attach to), then their nearby unconnected cross-type partners
+        if structural or complementary:
+            # query-relevant seeds, then their partners: proximity (structural) or
+            # need↔offer fit (complementary). The pairs are the signal (no expand).
             geo_intent = {**intent, "node_types": intent["node_types"] or ["Event", "POI"]}
             seeds = await _diverse_seeds(conn, qvec, min(k_eff, 14), geo_intent)
-            partner_ids = await _structural_partners(conn, [str(s["id"]) for s in seeds])
-            seen = {str(s["id"]) for s in seeds}
+            seed_ids = [str(s["id"]) for s in seeds]
+            partner_ids = (
+                await _complementary_partners(conn, seed_ids) if complementary
+                else await _structural_partners(conn, seed_ids)
+            )
+            seen = set(seed_ids)
             extra = await conn.fetch(
                 f"SELECT {_NODE_COLS} FROM nodes WHERE id = ANY($1::uuid[]) AND valid_to IS NULL",
                 [pid for pid in partner_ids if pid not in seen],
@@ -557,9 +583,9 @@ async def answer_question(
             }
         ids = [str(n["id"]) for n in nodes]
         # Multi-hop graph expansion (analytical/factual only — not enumeration).
-        # Skipped in structural mode: the proximity pairs ARE the signal, and
+        # Skipped in structural/complementary: the pairs ARE the signal, and
         # expansion would flood them with text neighbours (AgendaItem/Road).
-        if not list_mode and not structural:
+        if not list_mode and not structural and not complementary:
             ids = await _expand(conn, ids, max_total=40)
             nodes = await conn.fetch(
                 f"SELECT {_NODE_COLS} FROM nodes WHERE id = ANY($1::uuid[]) AND valid_to IS NULL",
