@@ -1,8 +1,9 @@
 """
 OSM Overpass POI connector — businesses and points-of-interest in Dortmund.
 
-Queries Dortmund admin boundary (relation 62571) for all nodes/ways with
-shop, amenity, office, leisure, or tourism tags.
+Queries Dortmund admin boundary (relation 1829065) for all nodes/ways with
+shop, amenity, office, leisure, tourism, club, or sport tags (the last two pull
+in Sportvereine + sports facilities).
 
 Shape: reference (weekly full refresh)
 License: ODbL — attribution required + share-alike
@@ -43,9 +44,13 @@ area({DORTMUND_AREA_ID})->.dortmund;
   node["office"](area.dortmund);
   node["leisure"](area.dortmund);
   node["tourism"](area.dortmund);
+  node["club"](area.dortmund);
+  node["sport"](area.dortmund);
   way["shop"](area.dortmund);
   way["amenity"](area.dortmund);
   way["office"](area.dortmund);
+  way["club"](area.dortmund);
+  way["sport"](area.dortmund);
 );
 out center tags;
 """
@@ -96,6 +101,8 @@ class OverpassConnector(BaseConnector):
             "office": tags.get("office"),
             "leisure": tags.get("leisure"),
             "tourism": tags.get("tourism"),
+            "club": tags.get("club"),
+            "sport": tags.get("sport"),
             "opening_hours": tags.get("opening_hours"),
             "email": tags.get("contact:email") or tags.get("email"),
             "phone": tags.get("phone") or tags.get("contact:phone"),
@@ -113,24 +120,32 @@ class OverpassConnector(BaseConnector):
         if lat is not None and lon is not None:
             geom = {"type": "Point", "coordinates": [lon, lat]}
 
+        properties = {
+            "amenity": normalized.get("amenity"),
+            "shop": normalized.get("shop"),
+            "office": normalized.get("office"),
+            "leisure": normalized.get("leisure"),
+            "tourism": normalized.get("tourism"),
+            "opening_hours": normalized.get("opening_hours"),
+            "email": normalized.get("email"),
+            "phone": normalized.get("phone"),
+            "website": normalized.get("website"),
+            "addr_street": normalized.get("addr_street"),
+            "addr_housenumber": normalized.get("addr_housenumber"),
+            "addr_postcode": normalized.get("addr_postcode"),
+        }
+        # Sports/club tags added only when present, so existing POIs keep their
+        # exact content hash (no mass re-versioning) — only club/sport nodes change.
+        if normalized.get("club"):
+            properties["club"] = normalized["club"]
+        if normalized.get("sport"):
+            properties["sport"] = normalized["sport"]
+
         return [
             POI(
                 label=normalized["label"],
                 geom=geom,
-                properties={
-                    "amenity": normalized.get("amenity"),
-                    "shop": normalized.get("shop"),
-                    "office": normalized.get("office"),
-                    "leisure": normalized.get("leisure"),
-                    "tourism": normalized.get("tourism"),
-                    "opening_hours": normalized.get("opening_hours"),
-                    "email": normalized.get("email"),
-                    "phone": normalized.get("phone"),
-                    "website": normalized.get("website"),
-                    "addr_street": normalized.get("addr_street"),
-                    "addr_housenumber": normalized.get("addr_housenumber"),
-                    "addr_postcode": normalized.get("addr_postcode"),
-                },
+                properties=properties,
                 **self._provenance(normalized["source_id"], normalized["source_url"]),
             )
         ]

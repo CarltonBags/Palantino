@@ -76,4 +76,8 @@ def poi_resources(properties: dict[str, Any]) -> tuple[list[str], list[str]]:
     needs: set[str] = set()
     if p.get("shop") or p.get("amenity") in {"restaurant", "cafe", "pub", "bar", "biergarten"}:
         needs.update(["publikum", "sichtbarkeit"])
+    # sports clubs / Vereine: bring a crowd + a venue, seek sponsoring + visibility
+    if p.get("club") == "sport" or p.get("sport"):
+        offers.update(["publikum", "veranstaltungsflaeche", "ziel"])
+        needs.update(["sponsoring", "sichtbarkeit"])
     return sorted(needs), sorted(offers & RESOURCES)

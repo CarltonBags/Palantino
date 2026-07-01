@@ -38,7 +38,9 @@ from connectors.nordstadtblogger.connector import NordstadtbloggerConnector
 from connectors.ods_pois.connector import OdsPoisConnector
 from connectors.ods_stats.connector import OdsStatsConnector
 from connectors.oparl.connector import OParlConnector
+from connectors.offeneregister.connector import OffeneRegisterConnector
 from connectors.overpass.connector import OverpassConnector
+from connectors.ssb_dortmund.connector import SSBDortmundConnector
 from connectors.polizei_rss.connector import PolizeiRssConnector
 from connectors.strassen.connector import StrassenConnector
 from connectors.strassenabschnitte.connector import StrassenabschnitteConnector
@@ -375,6 +377,16 @@ async def run_nordstadtblogger() -> None:
 @flow(name="wirindortmund", log_prints=True)
 async def run_wirindortmund() -> None:
     await _run_node_connector(WirInDortmundConnector(), get_run_logger())
+
+
+@flow(name="ssb-dortmund-clubs", log_prints=True)
+async def run_ssb_dortmund() -> None:
+    await _run_node_connector(SSBDortmundConnector(), get_run_logger())
+
+
+@flow(name="offeneregister-companies", log_prints=True)
+async def run_offeneregister() -> None:
+    await _run_node_connector(OffeneRegisterConnector(), get_run_logger())
 
 
 # ── Embeddings (semantic layer) ───────────────────────────────────────────────
