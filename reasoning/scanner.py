@@ -371,7 +371,8 @@ async def _reason(candidate: Candidate, insight_type: str) -> list[dict[str, Any
         subgraph_json=format_subgraph(candidate.nodes, candidate.edges),
         today=date.today().isoformat(),
     )
-    text = await complete(SYSTEM_PROMPT, prompt, max_tokens=2048)
+    # Headroom for reasoning models (v4-pro spends budget on hidden reasoning).
+    text = await complete(SYSTEM_PROMPT, prompt, max_tokens=8000)
     return parse_insights(text)
 
 

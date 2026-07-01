@@ -110,6 +110,42 @@ export interface StoredInsight {
   created_at: string;
 }
 
+export interface ChatCitation {
+  id: string;
+  label: string;
+  node_type: string;
+  source: string;
+  source_url: string | null;
+}
+export interface ChatAnswer {
+  id?: string;
+  answer: string;
+  citations: ChatCitation[];
+  intent?: { lens?: string };
+  question?: string;
+}
+export interface EventCategory {
+  category: string;
+  n: number;
+}
+export interface EventItem {
+  id: string;
+  label: string;
+  category: string | null;
+  venue: string | null;
+  stadtbezirk: string | null;
+  valid_from: string | null;
+}
+export interface ChatHistoryItem {
+  id: string;
+  question: string;
+  answer: string;
+  lens: string | null;
+  citations: ChatCitation[];
+  rating: number | null;
+  created_at: string;
+}
+
 async function get<T>(path: string): Promise<T> {
   const res = await fetch(`${BASE}${path}`);
   if (!res.ok) throw new Error(`${res.status} ${res.statusText} on ${path}`);
@@ -141,6 +177,26 @@ export const api = {
   },
   subgraph: (nodeIds: string[]) =>
     post<{ nodes: GraphNode[]; edges: GraphEdge[] }>(`/subgraph`, { node_ids: nodeIds }),
+  chat: (question: string) => post<ChatAnswer>(`/chat`, { question }),
+  eventCategories: () => get<EventCategory[]>(`/events/categories`),
+  events: (opts: { category?: string; q?: string } = {}) => {
+    const p = new URLSearchParams();
+    if (opts.category) p.set("category", opts.category);
+    if (opts.q) p.set("q", opts.q);
+    const qs = p.toString();
+    return get<EventItem[]>(`/events${qs ? `?${qs}` : ""}`);
+  },
+  analyzeNode: (nodeId: string, lens: string) =>
+    post<ChatAnswer>(`/chat/node`, { node_id: nodeId, lens }),
+  rateChat: (id: string, rating: number) =>
+    post<{ id: string; rating: number }>(`/chat/${id}/rating`, { rating }),
+  chatHistory: (opts: { minRating?: number; lens?: string } = {}) => {
+    const q = new URLSearchParams();
+    if (opts.minRating) q.set("min_rating", String(opts.minRating));
+    if (opts.lens) q.set("lens", opts.lens);
+    const qs = q.toString();
+    return get<ChatHistoryItem[]>(`/chat/history${qs ? `?${qs}` : ""}`);
+  },
   node: (id: string) => get<GraphNode>(`/nodes/${id}`),
   nodeHistory: (id: string) => get<GraphNode[]>(`/nodes/${id}/history`),
   nodeEdges: (id: string) => get<GraphEdge[]>(`/nodes/${id}/edges`),

@@ -285,7 +285,7 @@ async def get_insights(req: InsightRequest) -> dict[str, Any]:
     template = INEFFICIENCY_PROMPT if req.insight_type == "inefficiency" else SYNERGY_PROMPT
     prompt = template.format(subgraph_json=subgraph, today=date.today().isoformat())
 
-    raw_text = await complete(SYSTEM_PROMPT, prompt, max_tokens=2048)
+    raw_text = await complete(SYSTEM_PROMPT, prompt, max_tokens=8000)
 
     # Tolerate ```json fences (providers vary) before parsing.
     text = raw_text.strip()
@@ -298,6 +298,174 @@ async def get_insights(req: InsightRequest) -> dict[str, Any]:
     except json.JSONDecodeError:
         raise HTTPException(status_code=502, detail="Reasoning layer returned non-JSON")
 
+    return result
+
+
+# ── Ask-the-city chat (grounded RAG) ────────────────────────────────────────────
+
+class ChatRequest(BaseModel):
+    question: str
+    k: int = 24
+
+
+@app.post("/chat")
+async def chat(req: ChatRequest) -> dict[str, Any]:
+    """Answer a question from the most relevant graph facts; log it for history."""
+    if not settings.openai_api_key:
+        raise HTTPException(status_code=503, detail="OPENAI_API_KEY not configured (embeddings)")
+    llm_key = settings.deepseek_api_key if settings.llm_provider == "deepseek" else settings.anthropic_api_key
+    if not llm_key:
+        raise HTTPException(
+            status_code=503, detail=f"No API key for llm_provider={settings.llm_provider}"
+        )
+    from reasoning.llm import active_model
+    from reasoning.qa import answer_question
+
+    result = await answer_question(req.question, k=min(max(req.k, 4), 48))
+    intent = result.get("intent") or {}
+    async with get_conn() as conn:
+        row = await conn.fetchrow(
+            """
+            INSERT INTO chat_queries (question, answer, lens, intent, citations, model)
+            VALUES ($1, $2, $3, $4, $5, $6) RETURNING id
+            """,
+            req.question, result["answer"], intent.get("lens"),
+            intent, result.get("citations", []), active_model(),
+        )
+    result["id"] = str(row["id"])
+    return result
+
+
+class RatingRequest(BaseModel):
+    rating: int
+
+
+@app.post("/chat/{query_id}/rating")
+async def rate_chat(query_id: UUID, req: RatingRequest) -> dict[str, Any]:
+    if not 1 <= req.rating <= 10:
+        raise HTTPException(status_code=400, detail="rating must be 1–10")
+    async with get_conn() as conn:
+        row = await conn.fetchrow(
+            "UPDATE chat_queries SET rating = $2 WHERE id = $1 RETURNING id",
+            str(query_id), req.rating,
+        )
+    if not row:
+        raise HTTPException(status_code=404, detail="query not found")
+    return {"id": str(query_id), "rating": req.rating}
+
+
+@app.get("/chat/history")
+async def chat_history(
+    min_rating: int = 0,
+    lens: str | None = None,
+    rated_only: bool = False,
+    limit: int = Query(default=50, le=200),
+) -> list[dict[str, Any]]:
+    filters = ["TRUE"]
+    params: list[Any] = []
+    if min_rating > 0:
+        params.append(min_rating)
+        filters.append(f"rating >= ${len(params)}")
+    elif rated_only:
+        filters.append("rating IS NOT NULL")
+    if lens:
+        params.append(lens)
+        filters.append(f"lens = ${len(params)}")
+    params.append(limit)
+    async with get_conn() as conn:
+        rows = await conn.fetch(
+            f"""
+            SELECT id, question, answer, lens, citations, model, rating, created_at
+            FROM chat_queries WHERE {' AND '.join(filters)}
+            ORDER BY created_at DESC LIMIT ${len(params)}
+            """,
+            *params,
+        )
+    return [dict(r) for r in rows]
+
+
+# ── Event picker + anchored analysis ("add to chat") ────────────────────────────
+
+@app.get("/events/categories")
+async def event_categories() -> list[dict[str, Any]]:
+    """Categories of upcoming public events, for the picker's pre-filter."""
+    async with get_conn() as conn:
+        rows = await conn.fetch(
+            """
+            SELECT properties->>'category' AS category, count(*) AS n
+            FROM nodes
+            WHERE node_type = 'Event' AND source = 'dortmund_veranstaltungskalender'
+              AND valid_to IS NULL AND valid_from >= now()
+              AND properties->>'category' IS NOT NULL
+            GROUP BY 1 ORDER BY n DESC
+            """
+        )
+    return [dict(r) for r in rows]
+
+
+@app.get("/events")
+async def list_events(
+    category: str | None = None,
+    q: str | None = None,
+    limit: int = Query(default=60, le=200),
+) -> list[dict[str, Any]]:
+    """Upcoming public events, pre-filtered by category + optional label search."""
+    filters = [
+        "node_type = 'Event'", "source = 'dortmund_veranstaltungskalender'",
+        "valid_to IS NULL", "valid_from >= now()",
+    ]
+    params: list[Any] = []
+    if category:
+        params.append(category)
+        filters.append(f"properties->>'category' = ${len(params)}")
+    if q:
+        params.append(f"%{q}%")
+        filters.append(f"label ILIKE ${len(params)}")
+    params.append(limit)
+    async with get_conn() as conn:
+        rows = await conn.fetch(
+            f"""
+            SELECT id, label, properties->>'category' AS category,
+                   properties->>'venue' AS venue, properties->>'stadtbezirk' AS stadtbezirk,
+                   valid_from
+            FROM nodes WHERE {' AND '.join(filters)}
+            ORDER BY valid_from ASC LIMIT ${len(params)}
+            """,
+            *params,
+        )
+    return [dict(r) for r in rows]
+
+
+class NodeAnalysisRequest(BaseModel):
+    node_id: UUID
+    lens: str = "synergy"
+
+
+@app.post("/chat/node")
+async def chat_node(req: NodeAnalysisRequest) -> dict[str, Any]:
+    """Run a lens analysis anchored on one node (event/business/…); logged like chat."""
+    if not settings.openai_api_key:
+        raise HTTPException(status_code=503, detail="OPENAI_API_KEY not configured (embeddings)")
+    llm_key = settings.deepseek_api_key if settings.llm_provider == "deepseek" else settings.anthropic_api_key
+    if not llm_key:
+        raise HTTPException(status_code=503, detail=f"No API key for llm_provider={settings.llm_provider}")
+    from reasoning.llm import active_model
+    from reasoning.qa import analyze_node
+
+    result = await analyze_node(str(req.node_id), req.lens)
+    intent = result.get("intent") or {}
+    question = result.get("question") or f"Analyse rund um {intent.get('anchor', '')}"
+    async with get_conn() as conn:
+        row = await conn.fetchrow(
+            """
+            INSERT INTO chat_queries (question, answer, lens, intent, citations, model)
+            VALUES ($1, $2, $3, $4, $5, $6) RETURNING id
+            """,
+            question, result["answer"], intent.get("lens"),
+            intent, result.get("citations", []), active_model(),
+        )
+    result["id"] = str(row["id"])
+    result["question"] = question
     return result
 
 
