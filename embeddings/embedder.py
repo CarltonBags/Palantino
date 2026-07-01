@@ -26,6 +26,8 @@ _PROP_KEYS = (
     "stadtbezirk", "stat_bezirk", "category", "gremium", "title", "subtitle",
     "reason", "name_de", "road_type", "strassenklasse", "strassengruppe",
     "area_type", "register_id",
+    # companies / planned works / clubs
+    "rechtsform", "org_type", "beschreibung", "art", "gewerk", "objektart", "sport",
 )
 
 # OpenAI accepts up to 2048 inputs/request; keep batches modest for payload size.

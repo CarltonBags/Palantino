@@ -22,7 +22,7 @@ logger = logging.getLogger(__name__)
 # observations (weather/air) are skipped — low semantic value, high volume.
 EMBED_NODE_TYPES = (
     "Event", "Meeting", "Resolution", "AgendaItem", "Tender",
-    "POI", "Organization", "GeoArea",
+    "POI", "Organization", "GeoArea", "ConstructionSite",
 )
 
 _WRITE_BATCH = 256
