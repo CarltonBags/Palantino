@@ -94,6 +94,7 @@ async def _run_all() -> None:
         ("gremienniederschriften", flows.run_gremienniederschriften),
         ("text_linking", flows.run_text_linking),
         ("reference_linking", flows.run_reference_linking),
+        ("entity_resolution", flows.run_resolution),
         ("embed_nodes", flows.run_embed_nodes),
     ]
     results: list[tuple[str, str]] = []

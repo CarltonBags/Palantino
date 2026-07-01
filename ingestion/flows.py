@@ -861,6 +861,23 @@ async def run_text_linking() -> None:
         raise
 
 
+@flow(name="entity-resolution", log_prints=True)
+async def run_resolution() -> None:
+    """Cross-source entity resolution (geo, fuzzy name, company↔storefront)."""
+    from resolution.resolver import EntityResolver
+
+    log = get_run_logger()
+    run_id = await _start_run("entity_resolver")
+    try:
+        await EntityResolver().run_all()
+        log.info("entity-resolution done")
+        await _finish_run(run_id, "entity_resolver", 0, 0)
+    except Exception as exc:
+        log.error("entity-resolution failed: %s", exc, exc_info=True)
+        await _finish_run(run_id, "entity_resolver", 0, 0, error=str(exc))
+        raise
+
+
 @flow(name="reference-linking", log_prints=True)
 async def run_reference_linking() -> None:
     """Deterministic register-key joins (works ↔ decision, works ↔ district)."""
