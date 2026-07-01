@@ -5,6 +5,7 @@ import { api, type StoredInsight } from "../api";
 
 interface Props {
   onOpenNode: (id: string) => void;
+  pipeline?: "classic" | "structural";
 }
 
 const TYPE_LABEL: Record<string, string> = {
@@ -18,7 +19,10 @@ const TYPE_COLOR: Record<string, string> = {
   scandal: "#ef4444",
 };
 
-export default function InsightsView({ onOpenNode }: Props) {
+export default function InsightsView({ onOpenNode, pipeline = "classic" }: Props) {
+  const [mode, setMode] = useState<"classic" | "structural" | "complementary">(pipeline);
+  const structural = mode === "structural";
+  const complementary = mode === "complementary";
   const [items, setItems] = useState<StoredInsight[]>([]);
   const [typeFilter, setTypeFilter] = useState("");
   const [scanning, setScanning] = useState(false);
@@ -27,11 +31,11 @@ export default function InsightsView({ onOpenNode }: Props) {
   function load() {
     setErr(null);
     api
-      .storedInsights("new", typeFilter || undefined)
+      .storedInsights("new", typeFilter || undefined, mode)
       .then(setItems)
       .catch((e) => setErr(String(e)));
   }
-  useEffect(load, [typeFilter]);
+  useEffect(load, [typeFilter, mode]);
 
   async function decide(id: string, status: "confirmed" | "dismissed") {
     await api.setInsightStatus(id, status);
@@ -41,7 +45,7 @@ export default function InsightsView({ onOpenNode }: Props) {
   async function scan() {
     setScanning(true);
     try {
-      await api.scanInsights();
+      await api.scanInsights(mode);
       setTimeout(load, 10000);
       setTimeout(() => {
         load();
@@ -79,24 +83,49 @@ export default function InsightsView({ onOpenNode }: Props) {
           <div className="chat-hero-title" style={{ fontSize: 26 }}>
             Erkenntnisse über Dortmund
           </div>
-          <div className="history-filters" style={{ alignItems: "center" }}>
-            <div className="row">
-              <button className={typeFilter === "" ? "primary" : ""} onClick={() => setTypeFilter("")}>
-                Alle
-              </button>
-              <button
-                className={typeFilter === "synergy" ? "primary" : ""}
-                onClick={() => setTypeFilter("synergy")}
-              >
-                Synergien
-              </button>
-              <button
-                className={typeFilter === "inefficiency" ? "primary" : ""}
-                onClick={() => setTypeFilter("inefficiency")}
-              >
-                Ineffizienzen
-              </button>
+          <div className="mode-toggle" style={{ margin: "8px 0" }} title="Erkenntnis-Modus">
+            <button className={mode === "classic" ? "on" : ""} onClick={() => setMode("classic")}>
+              Klassisch
+            </button>
+            <button className={structural ? "on" : ""} onClick={() => setMode("structural")}>
+              Strukturell
+            </button>
+            <button className={complementary ? "on" : ""} onClick={() => setMode("complementary")}>
+              Komplementär
+            </button>
+          </div>
+          {structural && (
+            <div className="muted" style={{ marginBottom: 8 }}>
+              Räumliche Nähe statt Ähnlichkeit: anstehende Events neben noch nicht
+              verbundenen Geschäften (PostGIS-Distanz, gegensätzliche Typen).
             </div>
+          )}
+          {complementary && (
+            <div className="muted" style={{ marginBottom: 8 }}>
+              Bedarf trifft Angebot: was eine Veranstaltung braucht und wer es liefern
+              kann (z.B. Radtour ↔ Rastmöglichkeit/Fest) — über ein Ressourcen-Vokabular.
+            </div>
+          )}
+          <div className="history-filters" style={{ alignItems: "center" }}>
+            {!structural && (
+              <div className="row">
+                <button className={typeFilter === "" ? "primary" : ""} onClick={() => setTypeFilter("")}>
+                  Alle
+                </button>
+                <button
+                  className={typeFilter === "synergy" ? "primary" : ""}
+                  onClick={() => setTypeFilter("synergy")}
+                >
+                  Synergien
+                </button>
+                <button
+                  className={typeFilter === "inefficiency" ? "primary" : ""}
+                  onClick={() => setTypeFilter("inefficiency")}
+                >
+                  Ineffizienzen
+                </button>
+              </div>
+            )}
             <button className="primary" onClick={scan} disabled={scanning}>
               {scanning ? "Suche läuft…" : "Neue suchen"}
             </button>

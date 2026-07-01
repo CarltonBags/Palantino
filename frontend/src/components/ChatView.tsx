@@ -8,6 +8,8 @@ import EventPicker from "./EventPicker";
 interface Props {
   onOpenNode: (id: string) => void;
   lens?: string;
+  retrieval?: string;
+  showModeToggle?: boolean;
   title?: string;
   subtitle?: string;
   examples?: string[];
@@ -33,6 +35,8 @@ const DEFAULT_EXAMPLES = [
 export default function ChatView({
   onOpenNode,
   lens,
+  retrieval,
+  showModeToggle = false,
   title = "Frag die Stadt Dortmund",
   subtitle = "Stell eine Frage – die Antwort kommt mit Quellen direkt aus dem Wissensgraphen (Ratsbeschlüsse, Veranstaltungen, Nachrichten, Vergaben und mehr).",
   examples = DEFAULT_EXAMPLES,
@@ -41,6 +45,7 @@ export default function ChatView({
   const [q, setQ] = useState("");
   const [turns, setTurns] = useState<Turn[]>([]);
   const [picker, setPicker] = useState(false);
+  const [mode, setMode] = useState(retrieval ?? "semantic");
   const busy = turns.some((t) => t.pending);
   const endRef = useRef<HTMLDivElement>(null);
 
@@ -55,7 +60,7 @@ export default function ChatView({
     const idx = turns.length;
     setTurns((t) => [...t, { q: question, pending: true }]);
     try {
-      const a = await api.chat(question, lens);
+      const a = await api.chat(question, lens, mode);
       setTurns((t) => t.map((x, i) => (i === idx ? { q: x.q, a } : x)));
     } catch (e) {
       setTurns((t) => t.map((x, i) => (i === idx ? { q: x.q, err: String(e) } : x)));
@@ -151,6 +156,22 @@ export default function ChatView({
       </div>
 
       <div className="chat-inputbar">
+        {showModeToggle && (
+          <div className="mode-toggle" title="Abrufmodus für Synergie-/Akquise-Fragen">
+            <button
+              className={mode === "semantic" ? "on" : ""}
+              onClick={() => setMode("semantic")}
+            >
+              Semantisch
+            </button>
+            <button
+              className={mode === "structural" ? "on" : ""}
+              onClick={() => setMode("structural")}
+            >
+              Strukturell
+            </button>
+          </div>
+        )}
         <div className="chat-input">
           {showEventPicker && (
             <button

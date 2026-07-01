@@ -364,3 +364,16 @@ a { color: var(--accent); }
   color: var(--muted); font-weight: 700; margin: 18px 0 10px;
   padding-bottom: 6px; border-bottom: 1px solid var(--border);
 }
+
+/* semantic ⇄ structural mode toggle (chat + insights) */
+.mode-toggle {
+  display: inline-flex; gap: 2px; padding: 3px; width: fit-content;
+  background: var(--panel-2); border: 1px solid var(--border); border-radius: 999px;
+}
+.chat-inputbar .mode-toggle { margin: 0 auto 8px; }
+.mode-toggle button {
+  border: none; background: transparent; color: var(--muted);
+  border-radius: 999px; padding: 5px 14px; font-size: 12px; font-weight: 600;
+}
+.mode-toggle button.on { background: var(--accent); color: #241c00; }
+.tag-structural { color: #241c00; background: var(--accent); border-color: var(--accent); }

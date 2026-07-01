@@ -25,7 +25,9 @@ export default function App() {
   const [showRoads, setShowRoads] = useState(true);
   const [asOf, setAsOf] = useState<string>(""); // "" = current
   const [selectedId, setSelectedId] = useState<string | null>(null);
-  const [view, setView] = useState<"map" | "chat" | "insights" | "history" | "leads">("map");
+  const [view, setView] = useState<
+    "map" | "chat" | "insights" | "history" | "leads"
+  >("map");
 
   // Changing the as-of instant invalidates all cached point layers.
   useEffect(() => {
@@ -118,6 +120,7 @@ export default function App() {
 
       {view === "chat" ? (
         <ChatView
+          showModeToggle
           onOpenNode={(id) => {
             setSelectedId(id);
             setView("map");

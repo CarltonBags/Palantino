@@ -279,6 +279,48 @@ async def _diverse_seeds(
     return out
 
 
+async def _structural_partners(
+    conn: Any, seed_ids: list[str], max_dist_m: int = 300, min_dist_m: int = 25,
+    per_seed: int = 2, cap: int = 18,
+) -> list[str]:
+    """
+    Chat v2 retrieval signal: for the query-relevant seeds, find PHYSICALLY NEAR
+    (PostGIS), CROSS-TYPE, currently-UNCONNECTED named nodes — the structural shape
+    of an untapped synergy that vector similarity can't reach. Returns partner ids
+    to fold into the subgraph the synergy/leads lens reasons over.
+    """
+    if not seed_ids:
+        return []
+    rows = await conn.fetch(
+        """
+        SELECT DISTINCT pid FROM (
+            SELECT part.pid
+            FROM nodes s
+            CROSS JOIN LATERAL (
+                SELECT pp.id AS pid
+                FROM nodes pp
+                WHERE pp.valid_to IS NULL AND pp.geom IS NOT NULL
+                  AND pp.node_type <> s.node_type AND pp.id <> s.id
+                  AND pp.node_type IN ('POI', 'Event', 'Organization')
+                  AND pp.label NOT LIKE 'OSM %'
+                  AND ST_DWithin(s.geom::geography, pp.geom::geography, $2)
+                  AND ST_Distance(s.geom::geography, pp.geom::geography) > $3
+                  AND NOT EXISTS (
+                      SELECT 1 FROM edges e WHERE e.valid_to IS NULL
+                        AND ((e.from_node_id = s.id AND e.to_node_id = pp.id)
+                          OR (e.from_node_id = pp.id AND e.to_node_id = s.id)))
+                ORDER BY s.geom <-> pp.geom
+                LIMIT $4
+            ) part
+            WHERE s.id = ANY($1::uuid[]) AND s.geom IS NOT NULL
+        ) q
+        LIMIT $5
+        """,
+        seed_ids, max_dist_m, min_dist_m, per_seed, cap,
+    )
+    return [str(r["pid"]) for r in rows]
+
+
 def _intent_out(intent: dict[str, Any]) -> dict[str, Any]:
     return {
         "lens": intent.get("lens", "factual"),
@@ -291,9 +333,13 @@ def _intent_out(intent: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-async def answer_question(question: str, k: int = 24, lens_override: str | None = None) -> dict[str, Any]:
+async def answer_question(
+    question: str, k: int = 24, lens_override: str | None = None, retrieval: str = "semantic"
+) -> dict[str, Any]:
     """Answer a question from the most relevant graph facts. lens_override forces
-    a lens (e.g. the dedicated leads window) instead of auto-detecting it."""
+    a lens (e.g. the dedicated leads window). retrieval='structural' (Chat v2)
+    augments synergy/leads seeds with PostGIS proximity partners (link-prediction)
+    instead of pure semantic similarity."""
     question = (question or "").strip()
     if not question:
         return {"answer": "Bitte eine Frage eingeben.", "citations": [], "intent": {}}
@@ -327,8 +373,21 @@ async def answer_question(question: str, k: int = 24, lens_override: str | None 
         and (not has_filters or intent["lens"] == "leads")
     )
     k_eff = 60 if list_mode else k
+    structural = retrieval == "structural" and intent["lens"] in {"synergy", "leads"} and not list_mode
     async with get_conn() as conn:
-        if diversify:
+        if structural:
+            # query-relevant seeds anchored on geo types (so proximity has something
+            # to attach to), then their nearby unconnected cross-type partners
+            geo_intent = {**intent, "node_types": intent["node_types"] or ["Event", "POI"]}
+            seeds = await _diverse_seeds(conn, qvec, min(k_eff, 14), geo_intent)
+            partner_ids = await _structural_partners(conn, [str(s["id"]) for s in seeds])
+            seen = {str(s["id"]) for s in seeds}
+            extra = await conn.fetch(
+                f"SELECT {_NODE_COLS} FROM nodes WHERE id = ANY($1::uuid[]) AND valid_to IS NULL",
+                [pid for pid in partner_ids if pid not in seen],
+            ) if partner_ids else []
+            nodes = seeds + [dict(r) for r in extra]
+        elif diversify:
             nodes = await _diverse_seeds(conn, qvec, k_eff, intent)
         else:
             nodes = await _retrieve(conn, lit, intent, k_eff, use_filters=has_filters, list_mode=list_mode)
@@ -342,9 +401,10 @@ async def answer_question(question: str, k: int = 24, lens_override: str | None 
                 "intent": _intent_out(intent),
             }
         ids = [str(n["id"]) for n in nodes]
-        # Multi-hop graph expansion (analytical/factual only — not enumeration):
-        # follow edges out from the vector seeds to pull in connected facts.
-        if not list_mode:
+        # Multi-hop graph expansion (analytical/factual only — not enumeration).
+        # Skipped in structural mode: the proximity pairs ARE the signal, and
+        # expansion would flood them with text neighbours (AgendaItem/Road).
+        if not list_mode and not structural:
             ids = await _expand(conn, ids, max_total=40)
             nodes = await conn.fetch(
                 f"SELECT {_NODE_COLS} FROM nodes WHERE id = ANY($1::uuid[]) AND valid_to IS NULL",

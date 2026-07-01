@@ -145,6 +145,7 @@ export interface ChatHistoryItem {
   citations: ChatCitation[];
   rating: number | null;
   created_at: string;
+  retrieval: string | null;
 }
 
 async function get<T>(path: string): Promise<T> {
@@ -178,8 +179,12 @@ export const api = {
   },
   subgraph: (nodeIds: string[]) =>
     post<{ nodes: GraphNode[]; edges: GraphEdge[] }>(`/subgraph`, { node_ids: nodeIds }),
-  chat: (question: string, lens?: string) =>
-    post<ChatAnswer>(`/chat`, lens ? { question, lens } : { question }),
+  chat: (question: string, lens?: string, retrieval?: string) =>
+    post<ChatAnswer>(`/chat`, {
+      question,
+      ...(lens ? { lens } : {}),
+      ...(retrieval ? { retrieval } : {}),
+    }),
   eventCategories: () => get<EventCategory[]>(`/events/categories`),
   events: (opts: { category?: string; q?: string } = {}) => {
     const p = new URLSearchParams();
@@ -210,14 +215,16 @@ export const api = {
     ),
   insights: (nodeIds: string[], insightType: "inefficiency" | "synergy") =>
     post<Insight>(`/insights`, { node_ids: nodeIds, insight_type: insightType }),
-  storedInsights: (status = "new", insightType?: string) => {
+  storedInsights: (status = "new", insightType?: string, generator?: string) => {
     const q = new URLSearchParams({ status });
     if (insightType) q.set("insight_type", insightType);
+    if (generator) q.set("generator", generator);
     return get<StoredInsight[]>(`/insights/stored?${q.toString()}`);
   },
   setInsightStatus: (id: string, status: "confirmed" | "dismissed" | "new") =>
     post<{ id: string; status: string }>(`/insights/stored/${id}/status`, { status }),
-  scanInsights: () => post<{ status: string }>(`/insights/scan`, {}),
+  scanInsights: (mode = "classic") =>
+    post<{ status: string }>(`/insights/scan?mode=${mode}`, {}),
   ingestionStatus: () => get<IngestionRun[]>(`/status/ingestion`),
   sourceCatalog: () => get<SourceCatalogEntry[]>(`/status/sources`),
   resolutionCandidates: (status = "pending") =>

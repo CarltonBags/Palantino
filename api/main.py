@@ -307,6 +307,7 @@ class ChatRequest(BaseModel):
     question: str
     k: int = 24
     lens: str | None = None  # force a lens (e.g. the leads window); else auto-detect
+    retrieval: str = "semantic"  # 'structural' = Chat v2 (PostGIS proximity seeds)
 
 
 @app.post("/chat")
@@ -322,16 +323,19 @@ async def chat(req: ChatRequest) -> dict[str, Any]:
     from reasoning.llm import active_model
     from reasoning.qa import answer_question
 
-    result = await answer_question(req.question, k=min(max(req.k, 4), 48), lens_override=req.lens)
+    result = await answer_question(
+        req.question, k=min(max(req.k, 4), 48), lens_override=req.lens, retrieval=req.retrieval
+    )
     intent = result.get("intent") or {}
     async with get_conn() as conn:
         row = await conn.fetchrow(
             """
-            INSERT INTO chat_queries (question, answer, lens, intent, citations, model)
-            VALUES ($1, $2, $3, $4, $5, $6) RETURNING id
+            INSERT INTO chat_queries (question, answer, lens, intent, citations, model, retrieval)
+            VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING id
             """,
             req.question, result["answer"], intent.get("lens"),
             intent, result.get("citations", []), active_model(),
+            "structural" if req.retrieval == "structural" else "semantic",
         )
     result["id"] = str(row["id"])
     return result
@@ -406,7 +410,7 @@ async def chat_history(
     async with get_conn() as conn:
         rows = await conn.fetch(
             f"""
-            SELECT id, question, answer, lens, citations, model, rating, created_at
+            SELECT id, question, answer, lens, citations, model, rating, created_at, retrieval
             FROM chat_queries WHERE {' AND '.join(filters)}
             ORDER BY created_at DESC LIMIT ${len(params)}
             """,
@@ -533,15 +537,19 @@ async def get_subgraph(req: SubgraphRequest) -> dict[str, Any]:
 # ── Stored insights (from the reasoning scanner) ────────────────────────────────
 
 @app.post("/insights/scan")
-async def trigger_insight_scan(background: BackgroundTasks) -> dict[str, Any]:
-    """Kick off a bounded insight scan in the background (populates /insights/stored)."""
+async def trigger_insight_scan(
+    background: BackgroundTasks,
+    mode: str = Query(default="classic", pattern="^(classic|structural|complementary)$"),
+) -> dict[str, Any]:
+    """Kick off a bounded insight scan in the background (populates /insights/stored).
+    mode=structural = PostGIS proximity synergies; mode=complementary = need↔offer."""
     llm_key = settings.deepseek_api_key if settings.llm_provider == "deepseek" else settings.anthropic_api_key
     if not llm_key:
         raise HTTPException(status_code=503, detail=f"No API key for llm_provider={settings.llm_provider}")
     from reasoning.scanner import scan
 
-    background.add_task(scan, limit=5)
-    return {"status": "scan_started"}
+    background.add_task(scan, limit=5, mode=mode)
+    return {"status": "scan_started", "mode": mode}
 
 
 @app.get("/insights/stored")
@@ -549,6 +557,7 @@ async def list_stored_insights(
     insight_type: str | None = None,
     status: str = Query(default="new", pattern="^(new|confirmed|dismissed|all)$"),
     min_confidence: float = 0.0,
+    generator: str | None = None,
     limit: int = Query(default=100, le=500),
 ) -> list[dict[str, Any]]:
     """Insights produced by the reasoning scanner (rule 3: inferred, separate)."""
@@ -560,6 +569,12 @@ async def list_stored_insights(
     if insight_type:
         params.append(insight_type)
         filters.append(f"insight_type = ${len(params)}")
+    if generator == "structural":
+        filters.append("generator = 'structural_synergy'")
+    elif generator == "complementary":
+        filters.append("generator = 'complementary'")
+    elif generator == "classic":
+        filters.append("generator NOT IN ('structural_synergy', 'complementary')")
     where = " AND ".join(filters)
     params.append(limit)
 
