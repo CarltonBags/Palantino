@@ -42,6 +42,7 @@ from connectors.offeneregister.connector import OffeneRegisterConnector
 from connectors.overpass.connector import OverpassConnector
 from connectors.haushalt.connector import HaushaltConnector
 from connectors.sozialindikatoren.connector import SozialindikatorenConnector
+from connectors.sports_fixtures.connector import SportsFixturesConnector
 from connectors.ssb_dortmund.connector import SSBDortmundConnector
 from connectors.tiefbau_programm.connector import TiefbauProgrammConnector
 from connectors.polizei_rss.connector import PolizeiRssConnector
@@ -405,6 +406,11 @@ async def run_sozialindikatoren() -> None:
 @flow(name="haushalt", log_prints=True)
 async def run_haushalt() -> None:
     await _run_node_connector(HaushaltConnector(), get_run_logger())
+
+
+@flow(name="sports-fixtures", log_prints=True)
+async def run_sports_fixtures() -> None:
+    await _run_node_connector(SportsFixturesConnector(), get_run_logger())
 
 
 # ── Embeddings (semantic layer) ───────────────────────────────────────────────

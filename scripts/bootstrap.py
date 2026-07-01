@@ -91,6 +91,7 @@ async def _run_all() -> None:
         ("tiefbau_programm", flows.run_tiefbau_programm),
         ("sozialindikatoren", flows.run_sozialindikatoren),
         ("haushalt", flows.run_haushalt),
+        ("sports_fixtures", flows.run_sports_fixtures),
         ("gremientermine", flows.run_gremientermine),
         ("gremienniederschriften", flows.run_gremienniederschriften),
         ("text_linking", flows.run_text_linking),
