@@ -422,13 +422,31 @@ async def _deep_synergy_pairs(intent: dict[str, Any]) -> list[tuple[dict, dict, 
             # anchors: the entities the query is actually about
             business = _is_business_query(intent["search_text"])
             actor = _actor_clause("n", business)
-            anchors = await conn.fetch(
+            # 1) fuzzy NAME match first, so a query about a named actor
+            #    ("… für die Neven-Subotic-Stiftung") reliably anchors on it, even
+            #    if filler words pull the sentence embedding toward generic themes.
+            name_anchors = await conn.fetch(
+                f"""SELECT {_NODE_COLS}, (n.geom IS NOT NULL) AS has_geom
+                    FROM nodes n
+                    WHERE n.valid_to IS NULL AND {actor}
+                      AND similarity(lower(n.label), lower($1)) > 0.3
+                    ORDER BY similarity(lower(n.label), lower($1)) DESC LIMIT 3""",
+                intent["search_text"],
+            )
+            # 2) semantic anchors (the theme of the query)
+            sem_anchors = await conn.fetch(
                 f"""SELECT {_NODE_COLS}, (n.geom IS NOT NULL) AS has_geom
                     FROM node_embeddings e JOIN nodes n ON n.id = e.node_id
                     WHERE n.valid_to IS NULL AND {actor}
-                    ORDER BY e.embedding <=> $1::vector LIMIT 4""",
+                    ORDER BY e.embedding <=> $1::vector LIMIT 6""",
                 qlit,
             )
+            seen_a: set[str] = set()
+            anchors = []
+            for r in list(name_anchors) + list(sem_anchors):
+                if str(r["id"]) not in seen_a:
+                    seen_a.add(str(r["id"]))
+                    anchors.append(r)
             for anchor in anchors:
                 aid = str(anchor["id"])
                 # semantic partners: nearest to THIS anchor, different node, not yet connected
