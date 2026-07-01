@@ -49,7 +49,7 @@ export default function Sidebar({
   return (
     <div className="sidebar">
       <div className="brand">
-        civic-graph <small>· Dortmund</small>
+        SynergizerDO <small>· Dortmund</small>
       </div>
 
       {!selectedId && (

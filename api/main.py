@@ -8,7 +8,7 @@ from datetime import date
 from typing import Any
 from uuid import UUID
 
-from fastapi import FastAPI, HTTPException, Query
+from fastapi import BackgroundTasks, FastAPI, HTTPException, Query
 from pydantic import BaseModel
 
 from config import settings
@@ -532,6 +532,18 @@ async def get_subgraph(req: SubgraphRequest) -> dict[str, Any]:
 
 # ── Stored insights (from the reasoning scanner) ────────────────────────────────
 
+@app.post("/insights/scan")
+async def trigger_insight_scan(background: BackgroundTasks) -> dict[str, Any]:
+    """Kick off a bounded insight scan in the background (populates /insights/stored)."""
+    llm_key = settings.deepseek_api_key if settings.llm_provider == "deepseek" else settings.anthropic_api_key
+    if not llm_key:
+        raise HTTPException(status_code=503, detail=f"No API key for llm_provider={settings.llm_provider}")
+    from reasoning.scanner import scan
+
+    background.add_task(scan, limit=5)
+    return {"status": "scan_started"}
+
+
 @app.get("/insights/stored")
 async def list_stored_insights(
     insight_type: str | None = None,
@@ -554,9 +566,10 @@ async def list_stored_insights(
     async with get_conn() as conn:
         rows = await conn.fetch(
             f"""
-            SELECT id, insight_type, title, description, confidence,
-                   evidence_node_ids, reasoning_trace, model, generator,
-                   status, created_at
+            SELECT id::text AS id, insight_type, title, description, confidence,
+                   evidence_node_ids::text[] AS evidence_node_ids,
+                   reasoning_trace, model, generator, status, created_at,
+                   scan_id::text AS scan_id
             FROM insights WHERE {where}
             ORDER BY confidence DESC, created_at DESC
             LIMIT ${len(params)}

@@ -1,4 +1,4 @@
-// Typed client for the civic-graph FastAPI backend.
+// Typed client for the SynergizerDO FastAPI backend.
 // In dev, Vite proxies /api → http://localhost:8000 (see vite.config.ts).
 
 const BASE = "/api";
@@ -108,6 +108,7 @@ export interface StoredInsight {
   generator: string;
   status: string;
   created_at: string;
+  scan_id: string | null;
 }
 
 export interface ChatCitation {
@@ -216,6 +217,7 @@ export const api = {
   },
   setInsightStatus: (id: string, status: "confirmed" | "dismissed" | "new") =>
     post<{ id: string; status: string }>(`/insights/stored/${id}/status`, { status }),
+  scanInsights: () => post<{ status: string }>(`/insights/scan`, {}),
   ingestionStatus: () => get<IngestionRun[]>(`/status/ingestion`),
   sourceCatalog: () => get<SourceCatalogEntry[]>(`/status/sources`),
   resolutionCandidates: (status = "pending") =>

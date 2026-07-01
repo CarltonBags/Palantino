@@ -19,8 +19,14 @@ Rules:
 - Only reason over facts provided. Do not hallucinate entities or relationships.
 - For public officials: report sourced observations only ("Person X voted Y on date Z, source: URL").
   Never characterize motives or personality.
-- Return structured JSON: a list of insights, each with type, description, evidence (node/edge IDs),
-  confidence (0-1), and a reasoning_trace.
+- Return structured JSON: a list of insights, each with type, title, description,
+  evidence (node/edge IDs), confidence (0-1), and a reasoning_trace.
+- The "title" is a short, plain headline (max ~90 chars, NO Markdown, NO line
+  breaks) — it is shown separately from the description, so do NOT repeat it as a
+  lead line inside the description.
+- The "description" must be concise STRUCTURED Markdown, not one block: 2–4 brief
+  bullet points (e.g. Beteiligte, Mechanismus, Umsetzung). Use "\\n" for line
+  breaks so the JSON stays valid. Do NOT restate the title.
 - Report your honest confidence (0-1); calibrate it, don't inflate. Do not return
   anything below 0.5 (the system filters the rest by type).
 - Language: write every human-readable field (title, description, reasoning_trace)
@@ -55,6 +61,7 @@ Return JSON:
   "insights": [
     {{
       "type": "inefficiency",
+      "title": "...",
       "description": "...",
       "evidence": ["<node_id>", "<edge_id>", ...],
       "confidence": 0.0,
@@ -122,6 +129,7 @@ Return JSON:
   "insights": [
     {{
       "type": "synergy",
+      "title": "...",
       "description": "...",
       "evidence": ["<node_id>", "<edge_id>", ...],
       "confidence": 0.0,

@@ -121,9 +121,11 @@ def dedup_candidates(candidates: list[Candidate]) -> list[Candidate]:
 def derive_title(insight: dict[str, Any]) -> str:
     """Use an explicit title if the model gave one, else the first sentence."""
     if insight.get("title"):
-        return str(insight["title"])[:200]
+        return str(insight["title"]).strip().lstrip("#*-• ").strip()[:200]
+    # fallback: first non-empty line of the description, stripped of markdown
     desc = str(insight.get("description", "")).strip()
-    return (desc.split(". ")[0] or "Insight")[:200]
+    first = next((ln.strip().lstrip("#*-• ").strip() for ln in desc.splitlines() if ln.strip()), "")
+    return (first.split(". ")[0] or "Erkenntnis")[:140]
 
 
 # ── candidate generators (DB) ───────────────────────────────────────────────────
@@ -376,7 +378,9 @@ async def _reason(candidate: Candidate, insight_type: str) -> list[dict[str, Any
     return parse_insights(text)
 
 
-async def _persist(candidate: Candidate, insight_type: str, insight: dict[str, Any]) -> bool:
+async def _persist(
+    candidate: Candidate, insight_type: str, insight: dict[str, Any], scan_id: str | None = None
+) -> bool:
     confidence = float(insight.get("confidence", 0) or 0)
     floor = NEWS_CONFIDENCE_FLOOR if candidate.generator == "news_context" else CONFIDENCE_FLOOR
     if confidence < floor:
@@ -387,8 +391,8 @@ async def _persist(candidate: Candidate, insight_type: str, insight: dict[str, A
             """
             INSERT INTO insights
                 (insight_type, title, description, confidence, evidence_node_ids,
-                 evidence, reasoning_trace, model, generator, candidate_key)
-            VALUES ($1,$2,$3,$4,$5::uuid[],$6,$7,$8,$9,$10)
+                 evidence, reasoning_trace, model, generator, candidate_key, scan_id)
+            VALUES ($1,$2,$3,$4,$5::uuid[],$6,$7,$8,$9,$10,$11)
             ON CONFLICT (candidate_key) DO NOTHING
             """,
             insight_type,
@@ -401,12 +405,16 @@ async def _persist(candidate: Candidate, insight_type: str, insight: dict[str, A
             active_model(),
             candidate.generator,
             key,
+            scan_id,
         )
     return result.endswith("1")
 
 
-async def scan(insight_types: tuple[str, ...] = ("inefficiency", "synergy")) -> dict[str, int]:
-    """Generate candidates, reason over each, persist high-confidence insights."""
+async def scan(
+    insight_types: tuple[str, ...] = ("inefficiency", "synergy"), limit: int = 50
+) -> dict[str, int]:
+    """Generate candidates, reason over each, persist high-confidence insights.
+    `limit` caps candidates per generator — keep it small for on-demand scans."""
     key = settings.deepseek_api_key if settings.llm_provider == "deepseek" else settings.anthropic_api_key
     if not key:
         raise RuntimeError(
@@ -414,31 +422,33 @@ async def scan(insight_types: tuple[str, ...] = ("inefficiency", "synergy")) -> 
         )
 
     candidates = dedup_candidates(
-        await spatial_temporal_candidates()
-        + await area_bridge_candidates()
-        + await ego_network_candidates()
+        await spatial_temporal_candidates(limit=limit)
+        + await area_bridge_candidates(limit=limit)
+        + await ego_network_candidates(limit=limit)
     )
     # News-context candidates run through synergy only (they surface creative
     # news→event/place connections, not inefficiencies).
-    news_candidates = dedup_candidates(await news_context_candidates())
+    news_candidates = dedup_candidates(await news_context_candidates(news_limit=limit))
     logger.info(
         "insight scan: %d candidate subgraphs + %d news-context (deduped)",
         len(candidates), len(news_candidates),
     )
 
-    counts = {"candidates": len(candidates) + len(news_candidates), "written": 0}
+    import uuid
+    scan_id = str(uuid.uuid4())  # one batch id per run → group in the UI
+    counts = {"candidates": len(candidates) + len(news_candidates), "written": 0, "scan_id": scan_id}
     for candidate in candidates:
         for insight_type in insight_types:
             try:
                 for insight in await _reason(candidate, insight_type):
-                    if await _persist(candidate, insight_type, insight):
+                    if await _persist(candidate, insight_type, insight, scan_id):
                         counts["written"] += 1
             except Exception as exc:  # one bad candidate shouldn't abort the scan
                 logger.warning("scan failed on %s/%s: %s", candidate.anchor_id, insight_type, exc)
     for candidate in news_candidates:
         try:
             for insight in await _reason(candidate, "synergy"):
-                if await _persist(candidate, "synergy", insight):
+                if await _persist(candidate, "synergy", insight, scan_id):
                     counts["written"] += 1
         except Exception as exc:
             logger.warning("news scan failed on %s: %s", candidate.anchor_id, exc)

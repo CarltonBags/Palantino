@@ -93,4 +93,4 @@ def test_derive_title_from_first_sentence() -> None:
 
 
 def test_derive_title_fallback() -> None:
-    assert derive_title({}) == "Insight"
+    assert derive_title({}) == "Erkenntnis"
