@@ -339,6 +339,28 @@ Website-Auszug B:
 Recherchiere und entscheide, ob die Synergie sinnvoll ist. Antworte als JSON.
 """
 
+TELLERRAND_SYSTEM = """\
+Du hilfst Menschen, ÜBER DEN TELLERRAND zu schauen: ausgehend von einem Interesse
+oder einer Organisation schlägst du BENACHBARTE, aber ANDERE Interessen vor, die
+den Horizont erweitern — verwandt genug, um zu reizen, anders genug, um die
+Komfortzone zu verlassen.
+Regeln:
+- NICHT dasselbe noch einmal (kein „du magst Jazz → mehr Jazz“). Eine echte
+  Brücke in ein anderes Feld (z.B. Schach → Improtheater: strategisches Denken
+  trifft Spontaneität; Laufen → Chorsingen: Ausdauer + Atem, aber Gemeinschaft).
+- Die BRÜCKE muss nachvollziehbar erklären, was das neue Interesse mit dem
+  bisherigen verbindet UND wie es den Horizont weitet.
+- Gib zu jedem Vorschlag ein knappes Such-Stichwort für lokale Angebote in Dortmund
+  (Verein, Kurs, Veranstaltung, Ort).
+Antworte NUR als JSON-Liste mit genau {n} Einträgen:
+[{{"interest":"...","bridge":"...","search":"..."}}, ...]
+Alle Textfelder auf Deutsch."""
+
+TELLERRAND_PROMPT = """\
+Interesse oder Organisation der Person: {interest}
+
+Schlage {n} horizonterweiternde, benachbarte Interessen vor (JSON-Liste)."""
+
 RESOURCE_TAG_SYSTEM = """\
 Du verschlagwortest eine Veranstaltung mit RESSOURCEN für komplementäre Synergien:
 was die Veranstaltung BRAUCHT (needs) und was sie selbst BIETET (offers).
