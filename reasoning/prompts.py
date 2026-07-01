@@ -314,9 +314,16 @@ Weitere Reject-Gründe: ein Akteur inaktiv/geschlossen/kein echter Betrieb; Webs
 passt nicht zum Akteur; ein Event ist bereits vorbei; die Akteure sind ohnehin
 schon verbunden; kein echter, umsetzbarer Mehrwert. Im Zweifel: reject.
 
-Ist sie sinnvoll (makes_sense): beschreibe KONKRET — die gemeinsame Zielgruppe/den
-Anlass, den Mechanismus, einen realistischen ersten Schritt, und Kontakt (nur aus
-den Fakten).
+Ist sie sinnvoll (makes_sense): fülle „description“ als STRUKTURIERTE Markdown-
+Aufzählung (NICHT ein Textblock) mit genau diesen Punkten, je als eigene Zeile mit
+„\\n“ getrennt:
+  „- **Akteur A:** …“ (wer, kurz)
+  „- **Akteur B:** …“ (wer, kurz)
+  „- **Gemeinsame Zielgruppe / Anlass:** …“
+  „- **Mechanismus:** …“ (wie die Zusammenarbeit konkret abläuft)
+  „- **Synergie-Potenzial:** …“ (der Mehrwert für beide)
+„first_step“ = ein realistischer erster Schritt; „contacts“ = Kontakte nur aus den
+Fakten.
 Antworte NUR mit JSON:
   {{"verdict":"makes_sense|reject","reason":"...","title":"...",
     "description":"...","first_step":"...","contacts":["..."]}}
