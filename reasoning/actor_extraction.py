@@ -48,8 +48,11 @@ def _parse_list(raw: str) -> list[dict[str, Any]]:
     return [d for d in data if isinstance(d, dict)]
 
 
-async def extract_news_actors(limit: int = 200, months: int = 12) -> dict[str, int]:
-    """Extract actors from recent, not-yet-processed news articles."""
+async def extract_news_actors(limit: int = 200, months: int = 60) -> dict[str, int]:
+    """Extract actors from not-yet-processed news articles (newest first). The
+    window is wide because the ORGANISATIONS a 2022 article describes (a Verein, a
+    Stiftung) are usually still active today — the article age isn't the actor age.
+    Full backlog coverage needs repeated runs (thousands of articles)."""
     async with get_conn() as conn:
         arts = await conn.fetch(
             f"""
