@@ -148,6 +148,18 @@ class Tender(NodeBase):
         return {"tender_type", "value_eur", "deadline", "award_criteria"}
 
 
+class BudgetItem(NodeBase):
+    """A line of the municipal budget (Haushaltsplan) — a Produktbereich or plan
+    line with income/expense/investment amounts for a year."""
+
+    node_type: str = "BudgetItem"
+
+    @classmethod
+    def fields(cls) -> set[str]:
+        return {"produkt_bereich", "year", "ertraege_eur", "aufwendungen_eur",
+                "saldo_eur", "investive_auszahlungen_eur"}
+
+
 class Event(NodeBase):
     """Police incident, public event, sports fixture, demonstration."""
 
