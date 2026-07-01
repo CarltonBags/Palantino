@@ -281,18 +281,18 @@ async def _diverse_seeds(
 
 async def _structural_partners(
     conn: Any, seed_ids: list[str], max_dist_m: int = 300, min_dist_m: int = 25,
-    per_seed: int = 2, cap: int = 18,
+    per_seed: int = 2, cap: int = 18, business: bool = False,
 ) -> list[str]:
     """
     Chat v2 retrieval signal: for the query-relevant seeds, find PHYSICALLY NEAR
-    (PostGIS), CROSS-TYPE, currently-UNCONNECTED named nodes — the structural shape
-    of an untapped synergy that vector similarity can't reach. Returns partner ids
-    to fold into the subgraph the synergy/leads lens reasons over.
+    (PostGIS), CROSS-TYPE, currently-UNCONNECTED real ACTOR nodes (venues/clubs,
+    real events, extracted civic actors — not news articles) — the structural shape
+    of an untapped synergy that vector similarity can't reach.
     """
     if not seed_ids:
         return []
     rows = await conn.fetch(
-        """
+        f"""
         SELECT DISTINCT pid FROM (
             SELECT part.pid
             FROM nodes s
@@ -301,10 +301,7 @@ async def _structural_partners(
                 FROM nodes pp
                 WHERE pp.valid_to IS NULL AND pp.geom IS NOT NULL
                   AND pp.node_type <> s.node_type AND pp.id <> s.id
-                  AND pp.node_type IN ('POI', 'Event', 'Organization')
-                  AND pp.label NOT LIKE 'OSM %'
-                  AND NOT (pp.source = 'offeneregister'
-                           AND coalesce(pp.properties->>'status', '') <> 'currently registered')
+                  AND {_actor_clause('pp', business)}
                   AND ST_DWithin(s.geom::geography, pp.geom::geography, $2)
                   AND ST_Distance(s.geom::geography, pp.geom::geography) > $3
                   AND NOT EXISTS (
@@ -323,7 +320,9 @@ async def _structural_partners(
     return [str(r["pid"]) for r in rows]
 
 
-async def _complementary_partners(conn: Any, seed_ids: list[str], cap: int = 18) -> list[str]:
+async def _complementary_partners(
+    conn: Any, seed_ids: list[str], cap: int = 18, business: bool = False,
+) -> list[str]:
     """Complementary retrieval: partners whose OFFER matches a seed's NEED (or vice
     versa) on the resource layer — need↔offer fit, not proximity or similarity."""
     if not seed_ids:
@@ -334,7 +333,7 @@ async def _complementary_partners(conn: Any, seed_ids: list[str], cap: int = 18)
         FROM node_resources ar
         JOIN node_resources br ON br.tag = ar.tag AND br.kind <> ar.kind
              AND br.node_id <> ar.node_id
-        JOIN nodes n ON n.id = br.node_id AND n.valid_to IS NULL AND {_ACTIVE}
+        JOIN nodes n ON n.id = br.node_id AND n.valid_to IS NULL AND {_actor_clause('n', business)}
         WHERE ar.node_id = ANY($1::uuid[])
         LIMIT $2
         """,
@@ -355,25 +354,33 @@ def _intent_out(intent: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-# Dissolved Handelsregister companies (or any offeneregister org not currently
-# registered) can't form a synergy — exclude them from every candidate query.
-_ACTIVE = (
-    "NOT (n.source = 'offeneregister' AND coalesce(n.properties->>'status','') <> 'currently registered')"
-)
 _BIZ_KW = (
     "unternehmen", "firma", "gmbh", "betrieb", "gewerbe", "vergabe", "auftrag",
     "wirtschaft", "company", "business", "geschäft", "handelsregister", "startup",
 )
 
 
-def _synergy_anchor_types(search_text: str) -> list[str]:
-    """People-connecting synergies live in Events + POIs (venues, clubs, cafés).
-    Handelsregister companies only join when the query is explicitly about business."""
+def _is_business_query(search_text: str) -> bool:
     t = (search_text or "").lower()
-    types = ["Event", "POI"]
-    if any(k in t for k in _BIZ_KW):
-        types.append("Organization")
-    return types
+    return any(k in t for k in _BIZ_KW)
+
+
+def _actor_clause(alias: str, business: bool) -> str:
+    """SQL predicate for a real, partnerable synergy ACTOR (not a news article):
+    named venues/clubs (POI), real events (not news), civic actors extracted from
+    news, and Handelsregister companies only on an explicit business query."""
+    a = alias
+    parts = [
+        f"({a}.node_type = 'POI' AND {a}.label NOT LIKE 'OSM %')",
+        f"({a}.node_type = 'Event' AND coalesce({a}.properties->>'event_type','') <> 'news')",
+        f"({a}.node_type = 'Organization' AND {a}.source = 'news_extraction')",
+    ]
+    if business:
+        parts.append(
+            f"({a}.node_type = 'Organization' AND {a}.source = 'offeneregister'"
+            f" AND coalesce({a}.properties->>'status','') = 'currently registered')"
+        )
+    return "(" + " OR ".join(parts) + ")"
 
 
 async def _deep_synergy_pairs(intent: dict[str, Any]) -> list[tuple[dict, dict, str]]:
@@ -394,27 +401,27 @@ async def _deep_synergy_pairs(intent: dict[str, Any]) -> list[tuple[dict, dict, 
             await conn.execute("SET LOCAL hnsw.iterative_scan = 'relaxed_order'")
             await conn.execute("SET LOCAL hnsw.ef_search = 200")
             # anchors: the entities the query is actually about
-            types = _synergy_anchor_types(intent["search_text"])
+            business = _is_business_query(intent["search_text"])
+            actor = _actor_clause("n", business)
             anchors = await conn.fetch(
                 f"""SELECT {_NODE_COLS}, (n.geom IS NOT NULL) AS has_geom
                     FROM node_embeddings e JOIN nodes n ON n.id = e.node_id
-                    WHERE n.valid_to IS NULL AND n.node_type = ANY($2::text[]) AND {_ACTIVE}
+                    WHERE n.valid_to IS NULL AND {actor}
                     ORDER BY e.embedding <=> $1::vector LIMIT 4""",
-                qlit, types,
+                qlit,
             )
             for anchor in anchors:
                 aid = str(anchor["id"])
                 # semantic partners: nearest to THIS anchor, different node, not yet connected
                 sem = await conn.fetch(
                     f"""SELECT {_NODE_COLS} FROM node_embeddings e JOIN nodes n ON n.id = e.node_id
-                        WHERE n.valid_to IS NULL AND n.node_type = ANY($2::text[]) AND n.id <> $1::uuid
-                          AND {_ACTIVE}
+                        WHERE n.valid_to IS NULL AND {actor} AND n.id <> $1::uuid
                           AND NOT EXISTS (SELECT 1 FROM edges g WHERE g.valid_to IS NULL
                               AND ((g.from_node_id = $1::uuid AND g.to_node_id = n.id)
                                 OR (g.from_node_id = n.id AND g.to_node_id = $1::uuid)))
                         ORDER BY e.embedding <=> (SELECT embedding FROM node_embeddings WHERE node_id = $1::uuid)
                         LIMIT 6""",
-                    aid, types,
+                    aid,
                 )
                 partners = [dict(r) for r in sem]
                 # complementary partners: need↔offer match on the resource layer
@@ -424,13 +431,13 @@ async def _deep_synergy_pairs(intent: dict[str, Any]) -> list[tuple[dict, dict, 
                        FROM node_resources ar
                        JOIN node_resources br ON br.tag = ar.tag AND br.kind <> ar.kind
                             AND br.node_id <> ar.node_id
-                       JOIN nodes n ON n.id = br.node_id AND n.valid_to IS NULL AND {_ACTIVE}
+                       JOIN nodes n ON n.id = br.node_id AND n.valid_to IS NULL AND {actor}
                        WHERE ar.node_id = $1::uuid LIMIT 4""",
                     aid,
                 )
                 partners += [dict(r) for r in comp]
                 if anchor.get("has_geom"):
-                    prox = await _structural_partners(conn, [aid], per_seed=3, cap=3)
+                    prox = await _structural_partners(conn, [aid], per_seed=3, cap=3, business=business)
                     if prox:
                         prows = await conn.fetch(
                             f"SELECT {_NODE_COLS} FROM nodes WHERE id = ANY($1::uuid[]) AND valid_to IS NULL",
@@ -558,9 +565,10 @@ async def answer_question(
             geo_intent = {**intent, "node_types": intent["node_types"] or ["Event", "POI"]}
             seeds = await _diverse_seeds(conn, qvec, min(k_eff, 14), geo_intent)
             seed_ids = [str(s["id"]) for s in seeds]
+            biz = _is_business_query(intent["search_text"])
             partner_ids = (
-                await _complementary_partners(conn, seed_ids) if complementary
-                else await _structural_partners(conn, seed_ids)
+                await _complementary_partners(conn, seed_ids, business=biz) if complementary
+                else await _structural_partners(conn, seed_ids, business=biz)
             )
             seen = set(seed_ids)
             extra = await conn.fetch(
