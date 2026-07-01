@@ -6,11 +6,11 @@ interface Props {
 }
 
 const EXAMPLES = [
-  "Ich bin in einem Schachverein",
-  "Fotografie",
+  "Ich war beim Juicy Beats Festival, mag aber keine großen Menschenmengen",
+  "Schachverein, eher introvertiert",
+  "Ich mag Kunstausstellungen, am liebsten draußen",
+  "Fußball beim TuS, kleines Budget",
   "Ehrenamt im Tierheim",
-  "Ich spiele Fußball beim TuS",
-  "Klettern",
 ];
 
 export default function TellerrandView({ onOpenNode }: Props) {
@@ -44,8 +44,9 @@ export default function TellerrandView({ onOpenNode }: Props) {
           <div className="chat-hero">
             <div className="chat-hero-title">Über den Tellerrand</div>
             <div className="chat-hero-sub">
-              Gib ein Interesse oder deinen Verein ein — wir zeigen dir benachbarte
-              Felder, die deinen Horizont erweitern, mit echten Dortmunder Angeboten.
+              Gib ein Interesse, deinen Verein, eine besuchte Veranstaltung oder
+              deine Vorlieben ein (z.B. „keine großen Menschenmengen“) — wir zeigen
+              dir passende, horizonterweiternde Felder mit echten Dortmunder Angeboten.
             </div>
             <div className="chat-examples">
               {EXAMPLES.map((ex) => (
@@ -90,7 +91,7 @@ export default function TellerrandView({ onOpenNode }: Props) {
         <div className="chat-input">
           <input
             type="text"
-            placeholder="Interesse oder Verein eingeben…"
+            placeholder="Interesse, Verein, besuchte Veranstaltung oder Vorlieben…"
             value={interest}
             onChange={(e) => setInterest(e.target.value)}
             onKeyDown={(e) => e.key === "Enter" && go(interest)}

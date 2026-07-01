@@ -340,26 +340,36 @@ Recherchiere und entscheide, ob die Synergie sinnvoll ist. Antworte als JSON.
 """
 
 TELLERRAND_SYSTEM = """\
-Du hilfst Menschen, ÜBER DEN TELLERRAND zu schauen: ausgehend von einem Interesse
-oder einer Organisation schlägst du BENACHBARTE, aber ANDERE Interessen vor, die
-den Horizont erweitern — verwandt genug, um zu reizen, anders genug, um die
-Komfortzone zu verlassen.
-Regeln:
-- NICHT dasselbe noch einmal (kein „du magst Jazz → mehr Jazz“). Eine echte
-  Brücke in ein anderes Feld (z.B. Schach → Improtheater: strategisches Denken
-  trifft Spontaneität; Laufen → Chorsingen: Ausdauer + Atem, aber Gemeinschaft).
-- Die BRÜCKE muss nachvollziehbar erklären, was das neue Interesse mit dem
-  bisherigen verbindet UND wie es den Horizont weitet.
-- Gib zu jedem Vorschlag ein knappes Such-Stichwort für lokale Angebote in Dortmund
-  (Verein, Kurs, Veranstaltung, Ort).
+Du hilfst Menschen, ÜBER DEN TELLERRAND zu schauen. Die Eingabe kann enthalten:
+ein Interesse, einen Verein/eine Organisation, eine BESUCHTE VERANSTALTUNG, und/
+oder PERSÖNLICHKEITS-/VORLIEBEN-Angaben (z.B. „mag keine großen Menschenmengen“,
+„lieber draußen“, „kleines Budget“, „introvertiert“, „abends keine Zeit“).
+
+Aufgabe:
+1. Leite aus der Eingabe ein PROFIL ab: was die Person mag + ihre Einschränkungen.
+2. Schlage {n} BENACHBARTE, aber ANDERE Aktivitäten, Interessen oder
+   Veranstaltungstypen vor, die den Horizont erweitern — verwandt genug, um zu
+   reizen, anders genug, um die Komfortzone zu verlassen. Wurde eine besuchte
+   VERANSTALTUNG genannt, dürfen auch ähnliche Veranstaltungstypen dabei sein,
+   sofern sie das Profil weiten (nicht bloß dasselbe noch einmal).
+3. HALTE DICH STRIKT AN DIE VORLIEBEN. Beispiele:
+   - „keine großen Menschenmengen“ / introvertiert → kleine, ruhige, intime
+     Formate; KEINE Festivals, Stadien, Massenevents.
+   - „lieber draußen“ → Outdoor-Angebote. „kleines Budget“ → günstig/kostenlos.
+   Passt ein Vorschlag nicht zur Persönlichkeit, lasse ihn weg.
+4. Die BRÜCKE erklärt, was den Vorschlag mit dem Profil verbindet UND wie er den
+   Horizont weitet. Gib ein knappes Such-Stichwort für lokale Dortmunder Angebote
+   (Verein, Kurs, Veranstaltung, Ort) — bei Veranstaltungstypen mit Event-Bezug.
 Antworte NUR als JSON-Liste mit genau {n} Einträgen:
 [{{"interest":"...","bridge":"...","search":"..."}}, ...]
 Alle Textfelder auf Deutsch."""
 
 TELLERRAND_PROMPT = """\
-Interesse oder Organisation der Person: {interest}
+Eingabe der Person (Interesse / Verein / besuchte Veranstaltung / Vorlieben):
+{interest}
 
-Schlage {n} horizonterweiternde, benachbarte Interessen vor (JSON-Liste)."""
+Leite das Profil ab und schlage {n} horizonterweiternde, zum Profil passende
+Vorschläge vor (JSON-Liste)."""
 
 RESOURCE_TAG_SYSTEM = """\
 Du verschlagwortest eine Veranstaltung mit RESSOURCEN für komplementäre Synergien:
