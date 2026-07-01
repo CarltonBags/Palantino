@@ -11,6 +11,7 @@ until `n` hold up.
 """
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 import random
@@ -101,9 +102,11 @@ async def _validate(ctx_a: str, site_a: str, ctx_b: str, site_b: str, note: str)
     return _parse_obj(await complete(SYNERGY_RESEARCH_SYSTEM, prompt, max_tokens=4000))
 
 
-async def _evaluate_pair(conn: Any, client: httpx.AsyncClient, a: dict, b: dict, note: str) -> dict[str, Any]:
-    ctx_a, url_a = await _gather_partner_context(conn, a)
-    ctx_b, url_b = await _gather_partner_context(conn, b)
+async def _evaluate_pair(client: httpx.AsyncClient, a: dict, b: dict, note: str) -> dict[str, Any]:
+    # own pool connection so pairs can be evaluated concurrently
+    async with get_conn() as conn:
+        ctx_a, url_a = await _gather_partner_context(conn, a)
+        ctx_b, url_b = await _gather_partner_context(conn, b)
     site_a = await _fetch_website(url_a, client)
     site_b = await _fetch_website(url_b, client)
     v = await _validate(ctx_a, site_a, ctx_b, site_b, note)
@@ -152,14 +155,18 @@ async def find_synergies(
 
     results: list[dict[str, Any]] = []
     validated = 0
+    batch = 6  # evaluate pairs concurrently, stop once n validated
     async with httpx.AsyncClient(headers={"User-Agent": settings.bot_user_agent}) as client:
-        async with get_conn() as conn:
-            for a, b, note in pairs:
-                v = await _evaluate_pair(conn, client, a, b, note)
-                results.append(v)
-                if v.get("verdict") == "makes_sense" and v.get("description"):
-                    validated += 1
-                    if validated >= n:
-                        break
+        for i in range(0, len(pairs), batch):
+            chunk = pairs[i : i + batch]
+            evaluated = await asyncio.gather(
+                *(_evaluate_pair(client, a, b, note) for a, b, note in chunk)
+            )
+            results.extend(evaluated)
+            validated = sum(
+                1 for r in results if r.get("verdict") == "makes_sense" and r.get("description")
+            )
+            if validated >= n:
+                break
     logger.info("synergy finder: %d validated / %d evaluated", validated, len(results))
     return results
