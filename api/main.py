@@ -371,6 +371,23 @@ async def chat_discuss(req: DiscussRequest) -> dict[str, Any]:
     return result
 
 
+class SynergyRequest(BaseModel):
+    n: int = 5
+
+
+@app.post("/synergies/deep")
+async def deep_synergies(req: SynergyRequest) -> dict[str, Any]:
+    """Return n researched, validated synergies (each partner researched + a
+    per-synergy sub-agent checks it holds; implausible ones dropped + backfilled)."""
+    llm_key = settings.deepseek_api_key if settings.llm_provider == "deepseek" else settings.anthropic_api_key
+    if not llm_key:
+        raise HTTPException(status_code=503, detail=f"No API key for llm_provider={settings.llm_provider}")
+    from reasoning.synergy_finder import find_synergies
+
+    synergies = await find_synergies(n=min(max(req.n, 1), 8))
+    return {"synergies": synergies}
+
+
 class RatingRequest(BaseModel):
     rating: int
 
