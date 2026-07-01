@@ -335,7 +335,7 @@ async def chat(req: ChatRequest) -> dict[str, Any]:
             """,
             req.question, result["answer"], intent.get("lens"),
             intent, result.get("citations", []), active_model(),
-            "structural" if req.retrieval == "structural" else "semantic",
+            req.retrieval if req.retrieval in ("semantic", "structural", "deep") else "semantic",
         )
     result["id"] = str(row["id"])
     return result
