@@ -8,7 +8,7 @@ import json
 import logging
 
 from db.session import get_conn
-from reasoning.llm import complete
+from reasoning.llm import complete, fast_model
 from reasoning.prompts import RESOURCE_TAG_PROMPT, RESOURCE_TAG_SYSTEM
 from reasoning.resources import RESOURCES, poi_resources
 
@@ -92,6 +92,41 @@ async def enrich_events(limit: int = 200) -> int:
             continue
         needs, offers = _parse_tags(raw)
         recs = [(e["id"], "need", t) for t in needs] + [(e["id"], "offer", t) for t in offers]
+        if recs:
+            async with get_conn() as c:
+                await c.executemany(_INSERT, recs)
+            tagged += 1
+    return tagged
+
+
+async def enrich_actors(limit: int = 400) -> int:
+    """LLM-tag news-extracted civic actors (Vereine/Projekte/Einrichtungen) with
+    needs/offers, so they can take part in complementary synergies."""
+    async with get_conn() as c:
+        actors = await c.fetch(
+            """
+            SELECT id, label, properties FROM nodes n
+            WHERE source = 'news_extraction' AND valid_to IS NULL
+              AND NOT EXISTS (SELECT 1 FROM node_resources nr WHERE nr.node_id = n.id)
+            LIMIT $1
+            """,
+            limit,
+        )
+    tagged = 0
+    for a in actors:
+        props = a["properties"] if isinstance(a["properties"], dict) else {}
+        prompt = RESOURCE_TAG_PROMPT.format(
+            label=a["label"],
+            category=props.get("org_type") or "Organisation",
+            description=(props.get("role") or "")[:400],
+        )
+        try:
+            raw = await complete(RESOURCE_TAG_SYSTEM, prompt, max_tokens=1500, model=fast_model())
+        except Exception as exc:
+            logger.warning("actor tag failed for %s: %s", a["id"], exc)
+            continue
+        needs, offers = _parse_tags(raw)
+        recs = [(a["id"], "need", t) for t in needs] + [(a["id"], "offer", t) for t in offers]
         if recs:
             async with get_conn() as c:
                 await c.executemany(_INSERT, recs)
