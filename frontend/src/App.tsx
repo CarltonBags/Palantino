@@ -7,6 +7,7 @@ import IngestionStatus from "./components/IngestionStatus";
 import ChatView from "./components/ChatView";
 import HistoryView from "./components/HistoryView";
 import InsightsView from "./components/InsightsView";
+import TellerrandView from "./components/TellerrandView";
 
 const EMPTY: GeoJSON.FeatureCollection = { type: "FeatureCollection", features: [] };
 
@@ -26,7 +27,7 @@ export default function App() {
   const [asOf, setAsOf] = useState<string>(""); // "" = current
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [view, setView] = useState<
-    "map" | "chat" | "insights" | "history" | "leads"
+    "map" | "chat" | "insights" | "tellerrand" | "history" | "leads"
   >("map");
 
   // Changing the as-of instant invalidates all cached point layers.
@@ -110,6 +111,9 @@ export default function App() {
         <button className={view === "insights" ? "active" : ""} onClick={() => setView("insights")}>
           Insights
         </button>
+        <button className={view === "tellerrand" ? "active" : ""} onClick={() => setView("tellerrand")}>
+          Tellerrand
+        </button>
         <button className={view === "history" ? "active" : ""} onClick={() => setView("history")}>
           Verlauf
         </button>
@@ -145,6 +149,13 @@ export default function App() {
         />
       ) : view === "insights" ? (
         <InsightsView
+          onOpenNode={(id) => {
+            setSelectedId(id);
+            setView("map");
+          }}
+        />
+      ) : view === "tellerrand" ? (
+        <TellerrandView
           onOpenNode={(id) => {
             setSelectedId(id);
             setView("map");

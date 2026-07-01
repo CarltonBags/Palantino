@@ -122,6 +122,17 @@ export interface DeepSynergy {
   researched_websites?: string[];
   contacts?: string[];
 }
+export interface TellerrandOption {
+  id: string;
+  node_type: string;
+  label: string;
+  source_url: string | null;
+}
+export interface TellerrandRec {
+  interest: string;
+  bridge: string;
+  options: TellerrandOption[];
+}
 export interface ChatCitation {
   id: string;
   label: string;
@@ -238,6 +249,8 @@ export const api = {
     post<{ status: string }>(`/insights/scan?mode=${mode}`, {}),
   deepSynergies: (n = 5) =>
     post<{ synergies: DeepSynergy[] }>(`/synergies/deep`, { n }),
+  tellerrand: (interest: string, n = 5) =>
+    post<{ recommendations: TellerrandRec[] }>(`/tellerrand`, { interest, n }),
   ingestionStatus: () => get<IngestionRun[]>(`/status/ingestion`),
   sourceCatalog: () => get<SourceCatalogEntry[]>(`/status/sources`),
   resolutionCandidates: (status = "pending") =>

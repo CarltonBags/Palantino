@@ -171,6 +171,13 @@ export default function ChatView({
               Strukturell
             </button>
             <button
+              className={mode === "complementary" ? "on" : ""}
+              onClick={() => setMode("complementary")}
+              title="Bedarf trifft Angebot (need↔offer)"
+            >
+              Komplementär
+            </button>
+            <button
               className={mode === "deep" ? "on" : ""}
               onClick={() => setMode("deep")}
               title="5 Synergien, jede recherchiert (Graph + Websites) — dauert länger"

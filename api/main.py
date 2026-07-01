@@ -335,7 +335,7 @@ async def chat(req: ChatRequest) -> dict[str, Any]:
             """,
             req.question, result["answer"], intent.get("lens"),
             intent, result.get("citations", []), active_model(),
-            req.retrieval if req.retrieval in ("semantic", "structural", "deep") else "semantic",
+            req.retrieval if req.retrieval in ("semantic", "structural", "complementary", "deep") else "semantic",
         )
     result["id"] = str(row["id"])
     return result
@@ -386,6 +386,26 @@ async def deep_synergies(req: SynergyRequest) -> dict[str, Any]:
 
     synergies = await find_synergies(n=min(max(req.n, 1), 8))
     return {"synergies": synergies}
+
+
+class TellerrandRequest(BaseModel):
+    interest: str
+    n: int = 5
+
+
+@app.post("/tellerrand")
+async def tellerrand(req: TellerrandRequest) -> dict[str, Any]:
+    """Über den Tellerrand: from an interest/organisation, suggest adjacent-but-
+    different interests that broaden the horizon, grounded in real Dortmund offers."""
+    if not settings.openai_api_key:
+        raise HTTPException(status_code=503, detail="OPENAI_API_KEY not configured (embeddings)")
+    llm_key = settings.deepseek_api_key if settings.llm_provider == "deepseek" else settings.anthropic_api_key
+    if not llm_key:
+        raise HTTPException(status_code=503, detail=f"No API key for llm_provider={settings.llm_provider}")
+    from reasoning.tellerrand import extend_horizon
+
+    recs = await extend_horizon(req.interest, n=min(max(req.n, 1), 8))
+    return {"recommendations": recs}
 
 
 class RatingRequest(BaseModel):

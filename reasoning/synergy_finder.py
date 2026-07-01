@@ -11,6 +11,7 @@ until `n` hold up.
 """
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 import random
@@ -101,9 +102,11 @@ async def _validate(ctx_a: str, site_a: str, ctx_b: str, site_b: str, note: str)
     return _parse_obj(await complete(SYNERGY_RESEARCH_SYSTEM, prompt, max_tokens=4000))
 
 
-async def _evaluate_pair(conn: Any, client: httpx.AsyncClient, a: dict, b: dict, note: str) -> dict[str, Any]:
-    ctx_a, url_a = await _gather_partner_context(conn, a)
-    ctx_b, url_b = await _gather_partner_context(conn, b)
+async def _evaluate_pair(client: httpx.AsyncClient, a: dict, b: dict, note: str) -> dict[str, Any]:
+    # own pool connection so pairs can be evaluated concurrently
+    async with get_conn() as conn:
+        ctx_a, url_a = await _gather_partner_context(conn, a)
+        ctx_b, url_b = await _gather_partner_context(conn, b)
     site_a = await _fetch_website(url_a, client)
     site_b = await _fetch_website(url_b, client)
     v = await _validate(ctx_a, site_a, ctx_b, site_b, note)
@@ -124,15 +127,24 @@ async def _global_pairs(pool: int = 40) -> list[tuple[dict, dict, str]]:
 
     # Favour complementary (need↔offer = real audience/occasion fit) over pure
     # proximity, which produces near-but-incompatible pairs.
+    from collections import Counter
+
     cands = dedup_candidates(
         await complementary_candidates(limit=pool)
         + await structural_synergy_candidates(limit=max(pool // 2, 8))
     )
     pairs = []
+    used: Counter[str] = Counter()
     for c in cands:
         p = [nd for nd in c.nodes if nd["node_type"] != "GeoArea"][:2]
-        if len(p) >= 2:
-            pairs.append((p[0], p[1], c.note))
+        if len(p) < 2:
+            continue
+        # cap node reuse so a few venues/POIs (e.g. the nearest gym) don't recur
+        if any(used[str(nd["id"])] >= 2 for nd in p):
+            continue
+        for nd in p:
+            used[str(nd["id"])] += 1
+        pairs.append((p[0], p[1], c.note))
     return pairs
 
 
@@ -152,14 +164,18 @@ async def find_synergies(
 
     results: list[dict[str, Any]] = []
     validated = 0
+    batch = 6  # evaluate pairs concurrently, stop once n validated
     async with httpx.AsyncClient(headers={"User-Agent": settings.bot_user_agent}) as client:
-        async with get_conn() as conn:
-            for a, b, note in pairs:
-                v = await _evaluate_pair(conn, client, a, b, note)
-                results.append(v)
-                if v.get("verdict") == "makes_sense" and v.get("description"):
-                    validated += 1
-                    if validated >= n:
-                        break
+        for i in range(0, len(pairs), batch):
+            chunk = pairs[i : i + batch]
+            evaluated = await asyncio.gather(
+                *(_evaluate_pair(client, a, b, note) for a, b, note in chunk)
+            )
+            results.extend(evaluated)
+            validated = sum(
+                1 for r in results if r.get("verdict") == "makes_sense" and r.get("description")
+            )
+            if validated >= n:
+                break
     logger.info("synergy finder: %d validated / %d evaluated", validated, len(results))
     return results
