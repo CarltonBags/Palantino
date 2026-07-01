@@ -296,19 +296,31 @@ Regeln:
 SYNERGY_RESEARCH_SYSTEM = """\
 Du prüfst eine POTENZIELLE Synergie zwischen zwei realen Dortmunder Akteuren. Du
 hast dazu deren Graph-Fakten UND Auszüge ihrer Websites recherchiert. Entscheide
-EHRLICH, ob eine Zusammenarbeit sinnvoll und realistisch ist.
-Regeln:
-- Stütze dich nur auf die bereitgestellten Fakten + Website-Auszüge. Erfinde nichts.
-- VERWIRF (reject), wenn: ein Akteur inaktiv/geschlossen/kein echter Betrieb ist,
-  die Website nicht zum Akteur passt, ein beteiligtes Event bereits vorbei ist, die
-  Akteure ohnehin schon verbunden sind, oder die Kombination keinen echten Mehrwert
-  bringt. Sei streng — lieber ablehnen als eine schwache Synergie behaupten.
-- Ist sie sinnvoll (makes_sense): beschreibe sie KONKRET — Mechanismus, ein
-  realistischer erster Schritt, und Ansprechpartner/Kontakt (nur aus den Fakten).
-- Antworte NUR mit JSON:
+EHRLICH und STRENG, ob eine Zusammenarbeit wirklich sinnvoll ist.
+
+Der ENTSCHEIDENDE Test — ZIELGRUPPE & ANLASS:
+- Würde DIESELBE Person beide Angebote plausibel im selben Zusammenhang nutzen,
+  oder will das Publikum des einen das andere wirklich? Nur dann ist es eine
+  Synergie.
+- Bloße räumliche NÄHE reicht NIEMALS. Zwei nahe, aber inhaltlich/stimmungsmäßig
+  unvereinbare Pläne sind KEINE Synergie.
+- Beispiel REJECT: Fitnessstudio (Workout) ↔ Jazzkonzert am Abend — völlig
+  unterschiedliches Publikum, Stimmung und Tagesplanung; niemand trainiert vor
+  einem Jazzabend. Ablehnen.
+- Beispiel MAKES_SENSE: Kunstausstellung ↔ Café nebenan — Besucher wollen nach dem
+  Rundgang einkehren; gemeinsame Laufkundschaft, gleicher Anlass.
+
+Weitere Reject-Gründe: ein Akteur inaktiv/geschlossen/kein echter Betrieb; Website
+passt nicht zum Akteur; ein Event ist bereits vorbei; die Akteure sind ohnehin
+schon verbunden; kein echter, umsetzbarer Mehrwert. Im Zweifel: reject.
+
+Ist sie sinnvoll (makes_sense): beschreibe KONKRET — die gemeinsame Zielgruppe/den
+Anlass, den Mechanismus, einen realistischen ersten Schritt, und Kontakt (nur aus
+den Fakten).
+Antworte NUR mit JSON:
   {{"verdict":"makes_sense|reject","reason":"...","title":"...",
     "description":"...","first_step":"...","contacts":["..."]}}
-- Alle Textfelder auf Deutsch."""
+Alle Textfelder auf Deutsch."""
 
 SYNERGY_RESEARCH_PROMPT = """\
 Aktuelles Datum: {today}.

@@ -115,16 +115,18 @@ async def _evaluate_pair(conn: Any, client: httpx.AsyncClient, a: dict, b: dict,
     return v
 
 
-async def _global_pairs(pool: int) -> list[tuple[dict, dict, str]]:
+async def _global_pairs(pool: int = 40) -> list[tuple[dict, dict, str]]:
     from reasoning.scanner import (
         complementary_candidates,
         dedup_candidates,
         structural_synergy_candidates,
     )
 
+    # Favour complementary (need↔offer = real audience/occasion fit) over pure
+    # proximity, which produces near-but-incompatible pairs.
     cands = dedup_candidates(
-        await complementary_candidates(limit=max(pool // 2, 6))
-        + await structural_synergy_candidates(limit=max(pool // 2, 6))
+        await complementary_candidates(limit=pool)
+        + await structural_synergy_candidates(limit=max(pool // 2, 8))
     )
     pairs = []
     for c in cands:
@@ -144,7 +146,7 @@ async def find_synergies(
     they come from the global proximity + complementary generators.
     """
     if pairs is None:
-        pairs = await _global_pairs(pool=24)
+        pairs = await _global_pairs(pool=40)
     if shuffle:
         random.shuffle(pairs)  # variety across un-scoped calls
 

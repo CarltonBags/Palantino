@@ -341,7 +341,7 @@ async def _deep_synergy_pairs(intent: dict[str, Any]) -> list[tuple[dict, dict, 
 
     from reasoning.synergy_finder import _global_pairs
 
-    pairs = await _global_pairs(pool=30)
+    pairs = await _global_pairs(pool=45)
     if not pairs:
         return []
     qvec = np.array((await embed_texts([intent["search_text"]]))[0], dtype=float)
@@ -354,7 +354,7 @@ async def _deep_synergy_pairs(intent: dict[str, Any]) -> list[tuple[dict, dict, 
         vv /= np.linalg.norm(vv) or 1.0
         scored.append((float(qvec @ vv), pr))
     scored.sort(key=lambda x: -x[0])
-    return [pr for _, pr in scored[:14]]
+    return [pr for _, pr in scored[:30]]
 
 
 async def _deep_synergy_answer(intent: dict[str, Any]) -> dict[str, Any]:
