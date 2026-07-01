@@ -196,18 +196,32 @@ denen zwei Vorgänge/Akteure sich gegenseitig verstärken könnten, wenn jemand 
 koordinierte. Nur ECHTES, zeitlich aktuelles Potenzial (keine bereits realisierten
 Verbindungen, keine Jahre alten, abgeschlossenen Vorgänge). Bündle keine Events
 desselben kommerziellen Veranstaltungsorts miteinander. Begründe je Gelegenheit
-den Mechanismus und was zur Umsetzung nötig wäre.""",
+den Mechanismus und was zur Umsetzung nötig wäre.
+- ANSPRECHPARTNER: Wenn zu den beteiligten Akteuren in den Fakten Kontaktdaten
+  vorliegen (Eigenschaften contact_email / contact_phone / contact_website / email
+  / phone / website), nenne sie je Akteur als konkrete Kontaktmöglichkeit, um die
+  Synergie vorzuschlagen. Erfinde KEINE Kontaktdaten; nenne nur die, die in den
+  Fakten stehen, und nur geschäftliche/institutionelle Kontakte.""",
     "scandal": _ANALYSIS_BASE + """
 
-Aufgabe: Finde POTENZIELLE AUFFÄLLIGKEITEN / UNREGELMÄSSIGKEITEN, die eine
+Aufgabe: DECKE NICHT-OFFENSICHTLICHE, potenzielle Auffälligkeiten auf, die eine
 menschliche Prüfung wert sind — NICHT um Anschuldigungen zu erheben.
+- WICHTIG: Berichte NICHT einfach bereits öffentlich bekannte oder in den Quellen
+  schon ausdrücklich als "Skandal"/"Korruption"/"Affäre"/"Ermittlung"/"Festnahme"
+  benannte Vorfälle nach (z.B. ein Artikel, der bereits "Korruptionsskandal"
+  meldet). Das ist schon bekannt und bringt keinen Mehrwert. Eine bereits
+  gemeldete Affäre darf höchstens KONTEXT sein, niemals die Auffälligkeit selbst.
+- Suche stattdessen das VERBORGENE: Muster, die sich erst aus der VERKNÜPFUNG
+  mehrerer, je für sich unauffälliger Fakten ergeben und so noch NICHT öffentlich
+  benannt sind — z.B. dieselbe Firma gewinnt wiederholt Vergaben; eine Vergabe
+  folgt unmittelbar auf einen thematisch passenden Ratsbeschluss; eine Entscheidung
+  begünstigt eine im Graphen verbundene Partei; ungewöhnliche zeitliche oder
+  personelle Nähe über mehrere Quellen hinweg.
 - Formuliere als "auffällig / prüfenswert", niemals als "Korruption", "Skandal"
   oder "illegal". Du stellst Muster fest, du klagst niemanden an.
-- Beispiele: dieselbe Firma gewinnt wiederholt Vergaben; eine Vergabe folgt
-  unmittelbar auf einen thematisch passenden Ratsbeschluss; eine Entscheidung
-  begünstigt eine im Graphen verbundene Partei; ungewöhnliche zeitliche Nähe.
-- Zu jeder Auffälligkeit: die konkreten Fakten + Quelle, und WARUM es prüfenswert
-  ist. Zeigen die Fakten nichts Belastbares, sage das klar — erfinde nichts.""",
+- Zu jeder Auffälligkeit: die verknüpften Fakten + Quellen, und WARUM die
+  Verbindung prüfenswert ist. Zeigt sich nichts Belastbares oder ist alles bereits
+  öffentlich bekannt, sage das offen — erfinde nichts.""",
     "crime": _ANALYSIS_BASE + """
 
 Aufgabe: Analysiere GEMELDETE Vorfälle / polizeiliche Meldungen auf MUSTER —
@@ -222,6 +236,27 @@ Strikte Regeln (nicht verhandelbar):
   (kein "predictive policing").
 - Beschreibe Muster rein sachlich mit Beleg (Quelle, Datum, Ort wie gemeldet).
   Zeigen die Daten kein belastbares Muster, sage das offen — erfinde nichts.""",
+    "leads": _ANALYSIS_BASE + """
+
+Kontext: Du arbeitest für byzerolab (byzerolab.de) — eine Agentur, die
+KI-Workflows in lokale Unternehmen integriert und dazu berät.
+Aufgabe: Identifiziere aus den Fakten KONKRETE lokale Unternehmen, Einrichtungen
+oder Vereine in Dortmund, die plausible KUNDEN für KI-Workflow-Integration und
+-Beratung sein könnten — als Akquise-Liste.
+Für jeden Interessenten:
+- WER: das konkrete Unternehmen / die Organisation (mit Quelle/Knoten).
+- WARUM passend: eine aus den Fakten ableitbare Hypothese, wo KI-Workflows Nutzen
+  brächten (z.B. viel manuelle Verwaltung, Termin-/Kundenkoordination,
+  wiederkehrende Abläufe, Veranstaltungslogistik, Mitglieder- oder
+  Anfragenverwaltung). Markiere dies klar als ANNAHME, nicht als belegte Tatsache
+  über deren Betrieb.
+- AUFHÄNGER: ein kurzer, konkreter Pitch-Ansatz, der zu diesem Akteur passt.
+- KONTAKT: vorhandene geschäftliche Kontaktdaten aus den Fakten (E-Mail/Telefon/
+  Website). Erfinde keine; priorisiere Akteure mit vorhandenem Kontakt.
+Regeln:
+- Nur REALE Akteure aus den bereitgestellten Fakten — erfinde keine Unternehmen.
+- Nur geschäftliche/institutionelle Kontakte (GDPR). Keine Aussagen über benannte
+  Privatpersonen.""",
 }
 
 ANALYSIS_PROMPT = """\
@@ -233,6 +268,33 @@ Relevante Fakten aus dem Wissensgraphen:
 {subgraph_json}
 
 Führe deine Analyse anhand dieser Fakten durch und nenne die Quellen.
+"""
+
+
+# ── Follow-up discussion of a found result ──────────────────────────────────────
+
+DISCUSS_SYSTEM_PROMPT = """\
+Du vertiefst gemeinsam mit der/dem Nutzer:in eine zuvor gefundene Erkenntnis über
+Dortmund (z.B. eine Synergie, Ineffizienz oder einen Akquise-Vorschlag).
+Regeln:
+- Stütze dich auf die bereitgestellten Fakten (Knoten + Kanten mit Quelle) UND den
+  bisherigen Gesprächsverlauf. Erfinde nichts; geht etwas nicht aus den Fakten
+  hervor, sage das offen und trenne Beleg von Annahme.
+- Über reale benannte Personen/Amtsträger nur belegte Beobachtungen.
+- Antworte auf Deutsch, konkret und im Gesprächston; gehe direkt auf die letzte
+  Nachfrage ein und baue auf dem bisherigen Verlauf auf. Nenne genutzte Quellen.
+"""
+
+DISCUSS_PROMPT = """\
+Aktuelles Datum: {today}.
+
+Fakten zur besprochenen Erkenntnis (Beleg-Subgraph):
+{subgraph_json}
+
+Bisheriger Gesprächsverlauf:
+{transcript}
+
+Beantworte die letzte Nachfrage und vertiefe die Erkenntnis anhand der Fakten.
 """
 
 

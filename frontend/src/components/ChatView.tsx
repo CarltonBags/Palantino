@@ -7,6 +7,11 @@ import EventPicker from "./EventPicker";
 
 interface Props {
   onOpenNode: (id: string) => void;
+  lens?: string;
+  title?: string;
+  subtitle?: string;
+  examples?: string[];
+  showEventPicker?: boolean;
 }
 
 interface Turn {
@@ -17,7 +22,7 @@ interface Turn {
   rating?: number;
 }
 
-const EXAMPLES = [
+const DEFAULT_EXAMPLES = [
   "Welche Konzerte gibt es nächstes Wochenende?",
   "Was wurde 2023 zu Radwegen in Hörde beschlossen?",
   "Welche ungenutzten Synergien gibt es in der Nordstadt?",
@@ -25,7 +30,14 @@ const EXAMPLES = [
   "Welche Muster gibt es bei Polizeimeldungen?",
 ];
 
-export default function ChatView({ onOpenNode }: Props) {
+export default function ChatView({
+  onOpenNode,
+  lens,
+  title = "Frag die Stadt Dortmund",
+  subtitle = "Stell eine Frage – die Antwort kommt mit Quellen direkt aus dem Wissensgraphen (Ratsbeschlüsse, Veranstaltungen, Nachrichten, Vergaben und mehr).",
+  examples = DEFAULT_EXAMPLES,
+  showEventPicker = true,
+}: Props) {
   const [q, setQ] = useState("");
   const [turns, setTurns] = useState<Turn[]>([]);
   const [picker, setPicker] = useState(false);
@@ -43,7 +55,7 @@ export default function ChatView({ onOpenNode }: Props) {
     const idx = turns.length;
     setTurns((t) => [...t, { q: question, pending: true }]);
     try {
-      const a = await api.chat(question);
+      const a = await api.chat(question, lens);
       setTurns((t) => t.map((x, i) => (i === idx ? { q: x.q, a } : x)));
     } catch (e) {
       setTurns((t) => t.map((x, i) => (i === idx ? { q: x.q, err: String(e) } : x)));
@@ -78,13 +90,10 @@ export default function ChatView({ onOpenNode }: Props) {
       <div className="chat-thread">
         {turns.length === 0 && (
           <div className="chat-hero">
-            <div className="chat-hero-title">Frag die Stadt Dortmund</div>
-            <div className="chat-hero-sub">
-              Stell eine Frage – die Antwort kommt mit Quellen direkt aus dem Wissensgraphen
-              (Ratsbeschlüsse, Veranstaltungen, Nachrichten, Vergaben und mehr).
-            </div>
+            <div className="chat-hero-title">{title}</div>
+            <div className="chat-hero-sub">{subtitle}</div>
             <div className="chat-examples">
-              {EXAMPLES.map((ex) => (
+              {examples.map((ex) => (
                 <button key={ex} className="chat-chip" onClick={() => ask(ex)}>
                   {ex}
                 </button>
@@ -129,6 +138,11 @@ export default function ChatView({ onOpenNode }: Props) {
                 {t.a.id && (
                   <RatingBar value={t.rating ?? null} onRate={(n) => rate(i, t.a!.id!, n)} />
                 )}
+                <FollowupThread
+                  originalQ={t.q}
+                  originalAnswer={t.a.answer}
+                  nodeIds={t.a.citations.map((c) => c.id)}
+                />
               </div>
             )}
           </div>
@@ -138,13 +152,15 @@ export default function ChatView({ onOpenNode }: Props) {
 
       <div className="chat-inputbar">
         <div className="chat-input">
-          <button
-            className="add-event"
-            title="Event zur Analyse hinzufügen"
-            onClick={() => setPicker(true)}
-          >
-            + Event
-          </button>
+          {showEventPicker && (
+            <button
+              className="add-event"
+              title="Event zur Analyse hinzufügen"
+              onClick={() => setPicker(true)}
+            >
+              + Event
+            </button>
+          )}
           <input
             type="text"
             placeholder="Frage zu Dortmund stellen…"
@@ -160,6 +176,93 @@ export default function ChatView({ onOpenNode }: Props) {
       </div>
 
       {picker && <EventPicker onPick={analyzeEvent} onClose={() => setPicker(false)} />}
+    </div>
+  );
+}
+
+interface FollowupItem {
+  q: string;
+  a?: string;
+  pending?: boolean;
+  err?: string;
+}
+
+function FollowupThread({
+  originalQ,
+  originalAnswer,
+  nodeIds,
+}: {
+  originalQ: string;
+  originalAnswer: string;
+  nodeIds: string[];
+}) {
+  const [items, setItems] = useState<FollowupItem[]>([]);
+  const [q, setQ] = useState("");
+  const [open, setOpen] = useState(false);
+  const busy = items.some((i) => i.pending);
+
+  async function ask() {
+    const question = q.trim();
+    if (!question || busy) return;
+    setQ("");
+    const idx = items.length;
+    setItems((x) => [...x, { q: question, pending: true }]);
+    const messages = [
+      { role: "user", content: originalQ },
+      { role: "assistant", content: originalAnswer },
+      ...items.flatMap((i) =>
+        i.a ? [{ role: "user", content: i.q }, { role: "assistant", content: i.a }] : [],
+      ),
+      { role: "user", content: question },
+    ];
+    try {
+      const r = await api.discuss(nodeIds, messages);
+      setItems((x) => x.map((it, i) => (i === idx ? { q: it.q, a: r.answer } : it)));
+    } catch (e) {
+      setItems((x) => x.map((it, i) => (i === idx ? { q: it.q, err: String(e) } : it)));
+    }
+  }
+
+  if (!open && items.length === 0) {
+    return (
+      <button className="followup-open" onClick={() => setOpen(true)}>
+        ↳ Vertiefen
+      </button>
+    );
+  }
+
+  return (
+    <div className="followups">
+      {items.map((it, i) => (
+        <div key={i}>
+          <div className="bubble user fu">{it.q}</div>
+          {it.pending && (
+            <div className="bubble assistant fu">
+              <span className="typing"><span /> <span /> <span /></span>
+            </div>
+          )}
+          {it.err && <div className="bubble assistant fu err">{it.err}</div>}
+          {it.a && (
+            <div className="bubble assistant fu">
+              <div className="md">
+                <ReactMarkdown remarkPlugins={[remarkGfm]}>{it.a}</ReactMarkdown>
+              </div>
+            </div>
+          )}
+        </div>
+      ))}
+      <div className="followup-input">
+        <input
+          type="text"
+          placeholder="Nachfragen, um diese Erkenntnis zu vertiefen…"
+          value={q}
+          onChange={(e) => setQ(e.target.value)}
+          onKeyDown={(e) => e.key === "Enter" && ask()}
+        />
+        <button onClick={ask} disabled={busy || !q.trim()}>
+          {busy ? "…" : "Senden"}
+        </button>
+      </div>
     </div>
   );
 }

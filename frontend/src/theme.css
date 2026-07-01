@@ -310,3 +310,19 @@ a { color: var(--accent); }
   border-top: 1px solid var(--border); flex-wrap: wrap;
 }
 .picker-actions .muted { flex: 1; }
+
+/* follow-up ("vertiefen") thread under an answer */
+.followup-open {
+  margin-top: 10px; background: transparent; border: 1px dashed var(--border);
+  color: var(--muted); font-size: 12px; border-radius: 8px; padding: 5px 11px;
+}
+.followup-open:hover { border-color: var(--accent); color: var(--text); }
+.followups {
+  margin-top: 10px; border-left: 2px solid var(--border); padding-left: 12px;
+  display: flex; flex-direction: column; gap: 8px;
+}
+.bubble.fu { font-size: 13.5px; padding: 9px 12px; max-width: 100%; }
+.bubble.user.fu { align-self: flex-end; max-width: 88%; }
+.followup-input { display: flex; gap: 6px; margin-top: 4px; }
+.followup-input input { font-size: 13px; }
+.followup-input button { padding: 7px 14px; flex: 0 0 auto; }

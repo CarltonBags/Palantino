@@ -177,7 +177,8 @@ export const api = {
   },
   subgraph: (nodeIds: string[]) =>
     post<{ nodes: GraphNode[]; edges: GraphEdge[] }>(`/subgraph`, { node_ids: nodeIds }),
-  chat: (question: string) => post<ChatAnswer>(`/chat`, { question }),
+  chat: (question: string, lens?: string) =>
+    post<ChatAnswer>(`/chat`, lens ? { question, lens } : { question }),
   eventCategories: () => get<EventCategory[]>(`/events/categories`),
   events: (opts: { category?: string; q?: string } = {}) => {
     const p = new URLSearchParams();
@@ -188,6 +189,8 @@ export const api = {
   },
   analyzeNode: (nodeId: string, lens: string) =>
     post<ChatAnswer>(`/chat/node`, { node_id: nodeId, lens }),
+  discuss: (nodeIds: string[], messages: { role: string; content: string }[]) =>
+    post<ChatAnswer>(`/chat/discuss`, { node_ids: nodeIds, messages }),
   rateChat: (id: string, rating: number) =>
     post<{ id: string; rating: number }>(`/chat/${id}/rating`, { rating }),
   chatHistory: (opts: { minRating?: number; lens?: string } = {}) => {

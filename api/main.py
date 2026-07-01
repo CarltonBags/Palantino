@@ -306,6 +306,7 @@ async def get_insights(req: InsightRequest) -> dict[str, Any]:
 class ChatRequest(BaseModel):
     question: str
     k: int = 24
+    lens: str | None = None  # force a lens (e.g. the leads window); else auto-detect
 
 
 @app.post("/chat")
@@ -321,7 +322,7 @@ async def chat(req: ChatRequest) -> dict[str, Any]:
     from reasoning.llm import active_model
     from reasoning.qa import answer_question
 
-    result = await answer_question(req.question, k=min(max(req.k, 4), 48))
+    result = await answer_question(req.question, k=min(max(req.k, 4), 48), lens_override=req.lens)
     intent = result.get("intent") or {}
     async with get_conn() as conn:
         row = await conn.fetchrow(
@@ -331,6 +332,36 @@ async def chat(req: ChatRequest) -> dict[str, Any]:
             """,
             req.question, result["answer"], intent.get("lens"),
             intent, result.get("citations", []), active_model(),
+        )
+    result["id"] = str(row["id"])
+    return result
+
+
+class DiscussRequest(BaseModel):
+    node_ids: list[UUID]
+    messages: list[dict[str, str]]  # [{role: user|assistant, content}]
+
+
+@app.post("/chat/discuss")
+async def chat_discuss(req: DiscussRequest) -> dict[str, Any]:
+    """Deepen a previously-found result via follow-up, grounded in its evidence."""
+    if not settings.openai_api_key:
+        raise HTTPException(status_code=503, detail="OPENAI_API_KEY not configured (embeddings)")
+    llm_key = settings.deepseek_api_key if settings.llm_provider == "deepseek" else settings.anthropic_api_key
+    if not llm_key:
+        raise HTTPException(status_code=503, detail=f"No API key for llm_provider={settings.llm_provider}")
+    from reasoning.llm import active_model
+    from reasoning.qa import discuss
+
+    result = await discuss([str(n) for n in req.node_ids], req.messages)
+    last_user = next((m.get("content", "") for m in reversed(req.messages) if m.get("role") == "user"), "")
+    async with get_conn() as conn:
+        row = await conn.fetchrow(
+            """
+            INSERT INTO chat_queries (question, answer, lens, citations, model)
+            VALUES ($1, $2, 'discuss', $3, $4) RETURNING id
+            """,
+            last_user, result["answer"], result.get("citations", []), active_model(),
         )
     result["id"] = str(row["id"])
     return result

@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import json
 import logging
+import random
 from datetime import date
 from typing import Any
 
@@ -25,6 +26,8 @@ from reasoning.llm import complete
 from reasoning.prompts import (
     ANALYSIS_PROMPT,
     ANALYSIS_SYSTEM_PROMPTS,
+    DISCUSS_PROMPT,
+    DISCUSS_SYSTEM_PROMPT,
     QA_PROMPT,
     QA_SYSTEM_PROMPT,
     QUERY_INTENT_PROMPT,
@@ -32,7 +35,7 @@ from reasoning.prompts import (
     format_subgraph,
 )
 
-_LENSES = {"factual", "synergy", "inefficiency", "scandal", "crime"}
+_LENSES = {"factual", "synergy", "inefficiency", "scandal", "crime", "leads"}
 
 logger = logging.getLogger(__name__)
 
@@ -131,17 +134,21 @@ async def _retrieve(
         filters.append(f"n.valid_from < ({add(intent['date_to'])}::date + INTERVAL '1 day')")
     limit_ph = add(k)
     order = "n.valid_from ASC NULLS LAST" if list_mode else "e.embedding <=> $1::vector"
-    return await conn.fetch(
-        f"""
+    sql = f"""
         SELECT n.id, n.node_type, n.label, n.properties, n.source, n.source_url, n.valid_from
         FROM node_embeddings e
         JOIN nodes n ON n.id = e.node_id
         WHERE {' AND '.join(filters)}
         ORDER BY {order}
         LIMIT {limit_ph}
-        """,
-        *params,
-    )
+        """
+    if list_mode:
+        return await conn.fetch(sql, *params)
+    # filtered ANN → iterative scan so a type/date filter doesn't starve results
+    async with conn.transaction():
+        await conn.execute("SET LOCAL hnsw.iterative_scan = 'relaxed_order'")
+        await conn.execute("SET LOCAL hnsw.ef_search = 200")
+        return await conn.fetch(sql, *params)
 
 
 # Don't fan out THROUGH these hub types — a district links to ~all co-located
@@ -191,6 +198,87 @@ async def _expand(conn: Any, seed_ids: list[str], max_total: int = 40, hops: int
     return list(seen)
 
 
+async def _diverse_seeds(
+    conn: Any, qvec: list[float], k: int, intent: dict[str, Any] | None = None,
+    pool_size: int = 80, lam: float = 0.55,
+) -> list[dict[str, Any]]:
+    """
+    MMR seed selection for BROAD analytical queries. Pure KNN on a generic query
+    ("Synergien für die Stadt") deterministically returns the same densest cluster
+    every time → repetitive answers. Instead pull a larger relevance pool (scoped
+    by the same filters, e.g. node_types=[POI,Organization] for leads), pick a
+    RANDOM first seed from the top (rotation across asks), then greedily add seeds
+    that are relevant but dissimilar to those already chosen (MMR → breadth).
+    """
+    filters = ["n.valid_to IS NULL"]
+    params: list[Any] = [to_pgvector(qvec)]
+
+    def add(value: Any) -> str:
+        params.append(value)
+        return f"${len(params)}"
+
+    if intent:
+        if intent.get("node_types"):
+            filters.append(f"n.node_type = ANY({add(intent['node_types'])}::text[])")
+        if intent.get("category"):
+            filters.append(f"n.properties->>'category' ILIKE {add('%' + intent['category'] + '%')}")
+        if intent.get("date_from"):
+            filters.append(f"n.valid_from >= {add(intent['date_from'])}")
+        if intent.get("date_to"):
+            filters.append(f"n.valid_from < ({add(intent['date_to'])}::date + INTERVAL '1 day')")
+    params.append(pool_size)
+    # Filtered ANN: without iterative scan, HNSW returns the globally-nearest
+    # vectors THEN applies the filter — so a type filter (e.g. POI) can yield ~0
+    # rows when the nearest are another type. pgvector 0.8 iterative scan keeps
+    # searching until LIMIT rows pass the filter.
+    async with conn.transaction():
+        await conn.execute("SET LOCAL hnsw.iterative_scan = 'relaxed_order'")
+        await conn.execute("SET LOCAL hnsw.ef_search = 200")
+        rows = await conn.fetch(
+            f"""
+            SELECT {_NODE_COLS}, e.embedding::text AS emb
+            FROM node_embeddings e
+            JOIN nodes n ON n.id = e.node_id
+            WHERE {' AND '.join(filters)}
+            ORDER BY e.embedding <=> $1::vector
+            LIMIT ${len(params)}
+            """,
+            *params,
+        )
+    if not rows:
+        return []
+    import numpy as np
+
+    def _vec(s: str) -> Any:
+        v = np.array([float(x) for x in s.strip("[]").split(",")])
+        n = np.linalg.norm(v)
+        return v / n if n else v
+
+    vecs = [_vec(r["emb"]) for r in rows]
+    q = np.array(qvec, dtype=float)
+    q = q / (np.linalg.norm(q) or 1.0)
+    sim_q = [float(q @ v) for v in vecs]
+    n = len(rows)
+    k = min(k, n)
+    selected = [random.randrange(min(12, n))]  # random anchor → rotates per ask
+    while len(selected) < k:
+        best_i, best = -1, -1e9
+        for i in range(n):
+            if i in selected:
+                continue
+            div = max(float(vecs[i] @ vecs[j]) for j in selected)
+            score = lam * sim_q[i] - (1.0 - lam) * div
+            if score > best:
+                best, best_i = score, i
+        selected.append(best_i)
+    out = []
+    for i in selected:
+        d = dict(rows[i])
+        d.pop("emb", None)
+        out.append(d)
+    return out
+
+
 def _intent_out(intent: dict[str, Any]) -> dict[str, Any]:
     return {
         "lens": intent.get("lens", "factual"),
@@ -203,13 +291,16 @@ def _intent_out(intent: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-async def answer_question(question: str, k: int = 24) -> dict[str, Any]:
-    """Answer a natural-language question from the most relevant graph facts."""
+async def answer_question(question: str, k: int = 24, lens_override: str | None = None) -> dict[str, Any]:
+    """Answer a question from the most relevant graph facts. lens_override forces
+    a lens (e.g. the dedicated leads window) instead of auto-detecting it."""
     question = (question or "").strip()
     if not question:
         return {"answer": "Bitte eine Frage eingeben.", "citations": [], "intent": {}}
 
     intent = await extract_intent(question)
+    if lens_override in _LENSES:
+        intent["lens"] = lens_override
     # Enumeration only makes sense for factual "list all X" queries; analytical
     # lenses always want the focused + graph-expanded subgraph, never a dump.
     list_mode = bool(intent["list"]) and intent["lens"] == "factual"
@@ -217,18 +308,33 @@ async def answer_question(question: str, k: int = 24) -> dict[str, Any]:
     if list_mode and not intent["date_from"] and (intent["category"] or "Event" in intent["node_types"]):
         intent["date_from"] = date.today()
 
+    # Leads = business development: scope to real business actors, not news, so the
+    # retrieval surfaces actual prospects (POIs/Orgs) instead of editorial roundups.
+    if intent["lens"] == "leads" and not intent["node_types"]:
+        intent["node_types"] = ["POI", "Organization"]
+
     qvec = (await embed_texts([intent["search_text"]]))[0]
     lit = to_pgvector(qvec)
 
     has_filters = bool(
         intent["node_types"] or intent["category"] or intent["date_from"] or intent["date_to"]
     )
-    k_eff = 60 if list_mode else k  # enumeration needs room; analysis stays tight
+    # Diversify (MMR + random anchor) for exploratory analytical asks so they don't
+    # keep returning the same dense cluster: any broad lens, and always leads
+    # (inherently exploratory, but scoped to its business node_types via intent).
+    diversify = (
+        intent["lens"] != "factual" and not list_mode
+        and (not has_filters or intent["lens"] == "leads")
+    )
+    k_eff = 60 if list_mode else k
     async with get_conn() as conn:
-        nodes = await _retrieve(conn, lit, intent, k_eff, use_filters=has_filters, list_mode=list_mode)
-        # If filters were too narrow and found nothing, retry unfiltered + semantic.
-        if not nodes and has_filters:
-            nodes = await _retrieve(conn, lit, intent, k_eff, use_filters=False, list_mode=False)
+        if diversify:
+            nodes = await _diverse_seeds(conn, qvec, k_eff, intent)
+        else:
+            nodes = await _retrieve(conn, lit, intent, k_eff, use_filters=has_filters, list_mode=list_mode)
+            # If filters were too narrow and found nothing, retry unfiltered + semantic.
+            if not nodes and has_filters:
+                nodes = await _retrieve(conn, lit, intent, k_eff, use_filters=False, list_mode=False)
         if not nodes:
             return {
                 "answer": "Dazu liegen im Wissensgraphen keine passenden Fakten vor.",
@@ -355,3 +461,50 @@ async def analyze_node(node_id: str, lens: str, k: int = 20) -> dict[str, Any]:
         "question": question,
         "intent": {"lens": lens, "anchor": anchor["label"]},
     }
+
+
+async def discuss(node_ids: list[str], messages: list[dict[str, str]]) -> dict[str, Any]:
+    """
+    Follow-up conversation grounded in a previously-found result. Reasons over the
+    SAME evidence subgraph (node_ids from that answer) + the chat transcript, so
+    the user can deepen a specific synergy/lead/finding without re-retrieving.
+    """
+    ids = [str(i) for i in (node_ids or [])][:60]
+    if not ids or not messages:
+        return {"answer": "Kein Kontext zum Vertiefen.", "citations": []}
+
+    async with get_conn() as conn:
+        nodes = await conn.fetch(
+            f"SELECT {_NODE_COLS} FROM nodes WHERE id = ANY($1::uuid[]) AND valid_to IS NULL",
+            ids,
+        )
+        edges = await conn.fetch(
+            """
+            SELECT id, edge_type, from_node_id, to_node_id, properties, source
+            FROM edges
+            WHERE from_node_id = ANY($1::uuid[]) AND to_node_id = ANY($1::uuid[])
+              AND valid_to IS NULL
+            """,
+            ids,
+        )
+
+    transcript = "\n".join(
+        f"{'Nutzer' if m.get('role') == 'user' else 'Assistent'}: {m.get('content', '')}"
+        for m in messages
+    )
+    prompt = DISCUSS_PROMPT.format(
+        subgraph_json=format_subgraph([dict(n) for n in nodes], [dict(e) for e in edges]),
+        transcript=transcript,
+        today=date.today().isoformat(),
+    )
+    answer = await complete(DISCUSS_SYSTEM_PROMPT, prompt, max_tokens=8000)
+    if not answer.strip():
+        answer = "_Die Antwort konnte nicht erzeugt werden — bitte erneut versuchen._"
+    citations = [
+        {
+            "id": str(n["id"]), "label": n["label"], "node_type": n["node_type"],
+            "source": n["source"], "source_url": n["source_url"],
+        }
+        for n in nodes
+    ]
+    return {"answer": answer, "citations": citations}
