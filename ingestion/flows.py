@@ -855,6 +855,23 @@ async def run_text_linking() -> None:
         raise
 
 
+@flow(name="reference-linking", log_prints=True)
+async def run_reference_linking() -> None:
+    """Deterministic register-key joins (planned works ↔ authorising decision)."""
+    from resolution.reference_linker import link_drucksachen
+
+    log = get_run_logger()
+    run_id = await _start_run("reference_linker")
+    try:
+        counts = await link_drucksachen()
+        log.info("reference-linking done: %s", counts)
+        await _finish_run(run_id, "reference_linker", 0, counts["edges"])
+    except Exception as exc:
+        log.error("reference-linking failed: %s", exc, exc_info=True)
+        await _finish_run(run_id, "reference_linker", 0, 0, error=str(exc))
+        raise
+
+
 # ── Insight scan (reasoning layer) ────────────────────────────────────────────
 
 @flow(name="insight-scan", log_prints=True)
