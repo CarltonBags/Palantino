@@ -112,8 +112,9 @@ export interface StoredInsight {
 }
 
 export interface DeepSynergy {
-  title: string;
-  description: string;
+  verdict: "makes_sense" | "reject";
+  title?: string;
+  description?: string;
   first_step?: string;
   reason?: string;
   partners: string[];

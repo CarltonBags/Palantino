@@ -178,8 +178,8 @@ export default function InsightsView({ onOpenNode, pipeline = "classic" }: Props
                 „5 Synergien recherchieren“ starten.
               </div>
             )}
-            {deepItems.map((s, i) => (
-              <div className="insight-card" key={i} style={{ borderLeftColor: "#2dd4bf" }}>
+            {deepItems.filter((s) => s.verdict === "makes_sense").map((s, i) => (
+              <div className="insight-card" key={"v" + i} style={{ borderLeftColor: "#2dd4bf" }}>
                 <div className="ic-head">
                   <span className="ic-type" style={{ color: "#2dd4bf" }}>
                     <span className="dot" style={{ background: "#2dd4bf" }} />
@@ -191,7 +191,7 @@ export default function InsightsView({ onOpenNode, pipeline = "classic" }: Props
                   <div className="muted" style={{ marginBottom: 6 }}>{s.partners.join("  ↔  ")}</div>
                 )}
                 <div className="md ic-desc">
-                  <ReactMarkdown remarkPlugins={[remarkGfm]}>{s.description}</ReactMarkdown>
+                  <ReactMarkdown remarkPlugins={[remarkGfm]}>{s.description ?? ""}</ReactMarkdown>
                 </div>
                 {s.first_step && (
                   <div className="ic-reason">
@@ -226,6 +226,23 @@ export default function InsightsView({ onOpenNode, pipeline = "classic" }: Props
                     ))}
                   </div>
                 )}
+              </div>
+            ))}
+
+            {deepItems.some((s) => s.verdict === "reject") && (
+              <div className="scan-group-head">Geprüft und verworfen</div>
+            )}
+            {deepItems.filter((s) => s.verdict === "reject").map((s, i) => (
+              <div
+                className="insight-card"
+                key={"r" + i}
+                style={{ borderLeftColor: "var(--border)", opacity: 0.72 }}
+              >
+                <span className="ic-type" style={{ color: "var(--muted)" }}>Verworfen</span>
+                <div style={{ fontWeight: 600, margin: "4px 0" }}>
+                  {s.partners?.join("  ↔  ")}
+                </div>
+                <div className="muted">{s.reason}</div>
               </div>
             ))}
           </>

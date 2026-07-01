@@ -333,40 +333,79 @@ def _intent_out(intent: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+async def _deep_synergy_pairs(intent: dict[str, Any]) -> list[tuple[dict, dict, str]]:
+    """Query-scoped pairs: take the (working) global proximity/complementary
+    candidate pairs and rank them by relevance to the question, so Tiefensuche
+    researches the pairs that actually fit what the user asked."""
+    import numpy as np
+
+    from reasoning.synergy_finder import _global_pairs
+
+    pairs = await _global_pairs(pool=30)
+    if not pairs:
+        return []
+    qvec = np.array((await embed_texts([intent["search_text"]]))[0], dtype=float)
+    qvec /= np.linalg.norm(qvec) or 1.0
+    texts = [f"{a['label']} · {b['label']} · {a.get('node_type')} {b.get('node_type')}" for a, b, _ in pairs]
+    vecs = await embed_texts(texts)
+    scored = []
+    for pr, v in zip(pairs, vecs):
+        vv = np.array(v, dtype=float)
+        vv /= np.linalg.norm(vv) or 1.0
+        scored.append((float(qvec @ vv), pr))
+    scored.sort(key=lambda x: -x[0])
+    return [pr for _, pr in scored[:14]]
+
+
 async def _deep_synergy_answer(intent: dict[str, Any]) -> dict[str, Any]:
-    """Chat Tiefensuche: 5 researched + validated synergies, formatted as an answer."""
+    """Chat Tiefensuche: research + validate synergies SCOPED to the question;
+    show validated ones and the ones checked & rejected (with reason)."""
     from reasoning.synergy_finder import find_synergies
 
-    syns = await find_synergies(n=5)
-    if not syns:
-        return {
-            "answer": "Es ließen sich keine belastbaren, recherchierten Synergien finden.",
-            "citations": [], "intent": _intent_out(intent),
-        }
-    parts = ["**5 recherchierte Synergien** — die Akteure wurden im Graphen und auf ihren Websites geprüft.\n"]
-    ids: list[str] = []
-    for i, s in enumerate(syns, 1):
-        parts.append(f"## {i}. {s.get('title', 'Synergie')}")
-        if s.get("partners"):
-            parts.append(f"*{' ↔ '.join(s['partners'])}*")
-        parts.append(s.get("description", ""))
-        if s.get("first_step"):
-            parts.append(f"**Erster Schritt:** {s['first_step']}")
-        if s.get("contacts"):
-            parts.append(f"**Kontakt:** {', '.join(s['contacts'])}")
-        if s.get("researched_websites"):
-            parts.append(f"**Recherchiert:** {', '.join(s['researched_websites'])}")
-        parts.append("")
-        ids.extend(s.get("evidence_node_ids", []))
-    async with get_conn() as conn:
-        rows = await conn.fetch(
-            f"SELECT {_NODE_COLS} FROM nodes WHERE id = ANY($1::uuid[]) AND valid_to IS NULL", ids
+    pairs = await _deep_synergy_pairs(intent)
+    results = await find_synergies(n=5, pairs=pairs, shuffle=False)
+
+    validated = [r for r in results if r.get("verdict") == "makes_sense" and r.get("description")]
+    rejected = [r for r in results if r.get("verdict") == "reject"]
+
+    parts: list[str] = []
+    if validated:
+        parts.append(
+            f"**{len(validated)} recherchierte Synergien** — Akteure im Graphen und "
+            "auf ihren Websites geprüft.\n"
         )
-    citations = [
-        {"id": str(r["id"]), "label": r["label"], "node_type": r["node_type"],
-         "source": r["source"], "source_url": r["source_url"]}
-        for r in rows
-    ]
+        for i, s in enumerate(validated, 1):
+            parts.append(f"## {i}. {s.get('title', 'Synergie')}")
+            if s.get("partners"):
+                parts.append(f"*{' ↔ '.join(s['partners'])}*")
+            parts.append(s.get("description", ""))
+            if s.get("first_step"):
+                parts.append(f"**Erster Schritt:** {s['first_step']}")
+            if s.get("contacts"):
+                parts.append(f"**Kontakt:** {', '.join(s['contacts'])}")
+            if s.get("researched_websites"):
+                parts.append(f"**Recherchiert:** {', '.join(s['researched_websites'])}")
+            parts.append("")
+    else:
+        parts.append("Keine der geprüften Paarungen hielt der Recherche stand.\n")
+    if rejected:
+        parts.append("---\n### Geprüft und verworfen")
+        for r in rejected:
+            pn = " ↔ ".join(r.get("partners", [])) or "(Paar)"
+            parts.append(f"- **{pn}** — {r.get('reason', '(kein Grund angegeben)')}")
+
+    ids = [i for r in results for i in r.get("evidence_node_ids", [])]
+    citations = []
+    if ids:
+        async with get_conn() as conn:
+            rows = await conn.fetch(
+                f"SELECT {_NODE_COLS} FROM nodes WHERE id = ANY($1::uuid[]) AND valid_to IS NULL", ids
+            )
+        citations = [
+            {"id": str(r["id"]), "label": r["label"], "node_type": r["node_type"],
+             "source": r["source"], "source_url": r["source_url"]}
+            for r in rows
+        ]
     return {"answer": "\n".join(parts), "citations": citations, "intent": _intent_out(intent)}
 
 

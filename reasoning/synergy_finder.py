@@ -101,8 +101,21 @@ async def _validate(ctx_a: str, site_a: str, ctx_b: str, site_b: str, note: str)
     return _parse_obj(await complete(SYNERGY_RESEARCH_SYSTEM, prompt, max_tokens=4000))
 
 
-async def find_synergies(n: int = 5, pool: int = 24) -> list[dict[str, Any]]:
-    """Return `n` researched, validated synergies (drop-and-backfill)."""
+async def _evaluate_pair(conn: Any, client: httpx.AsyncClient, a: dict, b: dict, note: str) -> dict[str, Any]:
+    ctx_a, url_a = await _gather_partner_context(conn, a)
+    ctx_b, url_b = await _gather_partner_context(conn, b)
+    site_a = await _fetch_website(url_a, client)
+    site_b = await _fetch_website(url_b, client)
+    v = await _validate(ctx_a, site_a, ctx_b, site_b, note)
+    if v.get("verdict") not in ("makes_sense", "reject"):
+        v["verdict"] = "reject"
+    v["partners"] = [a["label"], b["label"]]
+    v["evidence_node_ids"] = [str(a["id"]), str(b["id"])]
+    v["researched_websites"] = [u for u in (url_a, url_b) if u]
+    return v
+
+
+async def _global_pairs(pool: int) -> list[tuple[dict, dict, str]]:
     from reasoning.scanner import (
         complementary_candidates,
         dedup_candidates,
@@ -113,26 +126,38 @@ async def find_synergies(n: int = 5, pool: int = 24) -> list[dict[str, Any]]:
         await complementary_candidates(limit=max(pool // 2, 6))
         + await structural_synergy_candidates(limit=max(pool // 2, 6))
     )
-    random.shuffle(cands)  # variety across calls
+    pairs = []
+    for c in cands:
+        p = [nd for nd in c.nodes if nd["node_type"] != "GeoArea"][:2]
+        if len(p) >= 2:
+            pairs.append((p[0], p[1], c.note))
+    return pairs
 
-    out: list[dict[str, Any]] = []
+
+async def find_synergies(
+    n: int = 5, pairs: list[tuple[dict, dict, str]] | None = None, shuffle: bool = True,
+) -> list[dict[str, Any]]:
+    """
+    Research + validate synergy pairs. Returns ALL evaluated results (validated
+    AND rejected, each with a `verdict` + `reason`), stopping once `n` have been
+    validated. `pairs` lets the caller pass query-scoped partner pairs; otherwise
+    they come from the global proximity + complementary generators.
+    """
+    if pairs is None:
+        pairs = await _global_pairs(pool=24)
+    if shuffle:
+        random.shuffle(pairs)  # variety across un-scoped calls
+
+    results: list[dict[str, Any]] = []
+    validated = 0
     async with httpx.AsyncClient(headers={"User-Agent": settings.bot_user_agent}) as client:
         async with get_conn() as conn:
-            for c in cands:
-                if len(out) >= n:
-                    break
-                partners = [nd for nd in c.nodes if nd["node_type"] != "GeoArea"][:2]
-                if len(partners) < 2:
-                    continue
-                ctx_a, url_a = await _gather_partner_context(conn, partners[0])
-                ctx_b, url_b = await _gather_partner_context(conn, partners[1])
-                site_a = await _fetch_website(url_a, client)
-                site_b = await _fetch_website(url_b, client)
-                v = await _validate(ctx_a, site_a, ctx_b, site_b, c.note)
+            for a, b, note in pairs:
+                v = await _evaluate_pair(conn, client, a, b, note)
+                results.append(v)
                 if v.get("verdict") == "makes_sense" and v.get("description"):
-                    v["partners"] = [partners[0]["label"], partners[1]["label"]]
-                    v["evidence_node_ids"] = [str(partners[0]["id"]), str(partners[1]["id"])]
-                    v["researched_websites"] = [u for u in (url_a, url_b) if u]
-                    out.append(v)
-    logger.info("synergy finder: %d validated from %d candidates", len(out), len(cands))
-    return out
+                    validated += 1
+                    if validated >= n:
+                        break
+    logger.info("synergy finder: %d validated / %d evaluated", validated, len(results))
+    return results
