@@ -40,7 +40,9 @@ from connectors.ods_stats.connector import OdsStatsConnector
 from connectors.oparl.connector import OParlConnector
 from connectors.offeneregister.connector import OffeneRegisterConnector
 from connectors.overpass.connector import OverpassConnector
+from connectors.sozialindikatoren.connector import SozialindikatorenConnector
 from connectors.ssb_dortmund.connector import SSBDortmundConnector
+from connectors.tiefbau_programm.connector import TiefbauProgrammConnector
 from connectors.polizei_rss.connector import PolizeiRssConnector
 from connectors.strassen.connector import StrassenConnector
 from connectors.strassenabschnitte.connector import StrassenabschnitteConnector
@@ -387,6 +389,16 @@ async def run_ssb_dortmund() -> None:
 @flow(name="offeneregister-companies", log_prints=True)
 async def run_offeneregister() -> None:
     await _run_node_connector(OffeneRegisterConnector(), get_run_logger())
+
+
+@flow(name="tiefbau-programm", log_prints=True)
+async def run_tiefbau_programm() -> None:
+    await _run_node_connector(TiefbauProgrammConnector(), get_run_logger())
+
+
+@flow(name="sozialindikatoren", log_prints=True)
+async def run_sozialindikatoren() -> None:
+    await _run_node_connector(SozialindikatorenConnector(), get_run_logger())
 
 
 # ── Embeddings (semantic layer) ───────────────────────────────────────────────
@@ -846,6 +858,42 @@ async def run_text_linking() -> None:
     except Exception as exc:
         log.error("text-linking failed: %s", exc, exc_info=True)
         await _finish_run(run_id, "text_linker", 0, 0, error=str(exc))
+        raise
+
+
+@flow(name="entity-resolution", log_prints=True)
+async def run_resolution() -> None:
+    """Cross-source entity resolution (geo, fuzzy name, company↔storefront)."""
+    from resolution.resolver import EntityResolver
+
+    log = get_run_logger()
+    run_id = await _start_run("entity_resolver")
+    try:
+        await EntityResolver().run_all()
+        log.info("entity-resolution done")
+        await _finish_run(run_id, "entity_resolver", 0, 0)
+    except Exception as exc:
+        log.error("entity-resolution failed: %s", exc, exc_info=True)
+        await _finish_run(run_id, "entity_resolver", 0, 0, error=str(exc))
+        raise
+
+
+@flow(name="reference-linking", log_prints=True)
+async def run_reference_linking() -> None:
+    """Deterministic register-key joins (works ↔ decision, works ↔ district)."""
+    from resolution.reference_linker import link_drucksachen, link_works_to_districts
+
+    log = get_run_logger()
+    run_id = await _start_run("reference_linker")
+    try:
+        ds = await link_drucksachen()
+        dist = await link_works_to_districts()
+        edges = ds["edges"] + dist["edges"]
+        log.info("reference-linking done: drucksachen=%s district=%s", ds, dist)
+        await _finish_run(run_id, "reference_linker", 0, edges)
+    except Exception as exc:
+        log.error("reference-linking failed: %s", exc, exc_info=True)
+        await _finish_run(run_id, "reference_linker", 0, 0, error=str(exc))
         raise
 
 

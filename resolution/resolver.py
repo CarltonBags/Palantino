@@ -44,6 +44,68 @@ class EntityResolver:
     async def run_all(self) -> None:
         await self.resolve_by_geo_proximity()
         await self.resolve_by_name_fuzzy()
+        await self.resolve_company_to_storefront()
+
+    async def resolve_company_to_storefront(
+        self, name_threshold: float = 0.4, limit: int = 4000,
+    ) -> None:
+        """
+        Link a Handelsregister company (Organization) to its physical storefront
+        (OSM POI) — different node types, so the same-type fuzzy pass misses them.
+        Block by shared postcode; strip the Rechtsform suffix so the legal name
+        ("Rewe Markt GmbH") matches the trade name ("Rewe"); confidence from name
+        similarity, boosted when the street also matches. This is the cross-source
+        link that ties a legal entity to its shop.
+        """
+        async with get_conn() as conn:
+            rows = await conn.fetch(
+                """
+                WITH comp AS (
+                    SELECT id, properties->>'addr_postcode' AS plz,
+                           properties->>'addr_street' AS street,
+                           trim(regexp_replace(
+                               label,
+                               '\\s+(gGmbH|GmbH & Co\\. KG|GmbH|UG.*|Aktiengesellschaft|AG'
+                               '|mbH|e\\.?\\s?V\\.?|KGaA|KG|OHG|GbR|SE|Stiftung|Verein).*$',
+                               '', 'i')) AS cname
+                    FROM nodes
+                    WHERE node_type = 'Organization' AND source = 'offeneregister'
+                      AND valid_to IS NULL AND properties->>'addr_postcode' IS NOT NULL
+                )
+                SELECT c.id AS a_id, p.id AS b_id,
+                       similarity(c.cname, p.label) AS name_sim,
+                       similarity(lower(coalesce(c.street, '')),
+                                  lower(coalesce(p.properties->>'addr_street', ''))) AS street_sim
+                FROM comp c
+                JOIN nodes p ON p.node_type = 'POI' AND p.valid_to IS NULL
+                    AND p.properties->>'addr_postcode' = c.plz
+                    AND length(c.cname) >= 3
+                    AND similarity(c.cname, p.label) >= $1
+                WHERE NOT EXISTS (
+                    SELECT 1 FROM resolution_candidates rc
+                    WHERE rc.node_a_id = c.id AND rc.node_b_id = p.id
+                )
+                ORDER BY name_sim DESC
+                LIMIT $2
+                """,
+                name_threshold, limit,
+            )
+            for row in rows:
+                name_sim = float(row["name_sim"])
+                street_sim = float(row["street_sim"] or 0.0)
+                confidence = name_sim + 0.15 if street_sim >= 0.6 else name_sim
+                # Cap below AUTO_MERGE: a company can be a chain (one legal entity,
+                # many stores), so a company↔POI SAME_AS is not safe to auto-merge —
+                # always route to the human review queue.
+                confidence = min(confidence, AUTO_MERGE_THRESHOLD - 0.01)
+                await self._handle_candidate(
+                    ResolutionCandidate(
+                        node_a_id=UUID(str(row["a_id"])),
+                        node_b_id=UUID(str(row["b_id"])),
+                        method="company_storefront",
+                        confidence=round(confidence, 3),
+                    )
+                )
 
     async def resolve_by_geo_proximity(
         self,

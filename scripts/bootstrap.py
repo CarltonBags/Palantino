@@ -88,9 +88,13 @@ async def _run_all() -> None:
         ("overpass", flows.run_overpass),
         ("ssb_dortmund", flows.run_ssb_dortmund),
         ("offeneregister", flows.run_offeneregister),
+        ("tiefbau_programm", flows.run_tiefbau_programm),
+        ("sozialindikatoren", flows.run_sozialindikatoren),
         ("gremientermine", flows.run_gremientermine),
         ("gremienniederschriften", flows.run_gremienniederschriften),
         ("text_linking", flows.run_text_linking),
+        ("reference_linking", flows.run_reference_linking),
+        ("entity_resolution", flows.run_resolution),
         ("embed_nodes", flows.run_embed_nodes),
     ]
     results: list[tuple[str, str]] = []
