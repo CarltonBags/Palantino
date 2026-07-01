@@ -37,7 +37,9 @@ _BATCH = 256
 def node_embedding_text(node: dict[str, Any]) -> str:
     """Compose the text that represents a node for embedding (type + label + key props)."""
     parts: list[str] = [str(node.get("node_type", "")), str(node.get("label", ""))]
-    props = node.get("properties") or {}
+    props = node.get("properties")
+    if not isinstance(props, dict):  # some rows store properties as a list/str
+        props = {}
     for key in _PROP_KEYS:
         val = props.get(key)
         if isinstance(val, str) and val.strip():
