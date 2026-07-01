@@ -312,7 +312,11 @@ Der ENTSCHEIDENDE Test — ZIELGRUPPE & ANLASS:
 
 Weitere Reject-Gründe: ein Akteur inaktiv/geschlossen/kein echter Betrieb; Website
 passt nicht zum Akteur; ein Event ist bereits vorbei; die Akteure sind ohnehin
-schon verbunden; kein echter, umsetzbarer Mehrwert. Im Zweifel: reject.
+schon verbunden; kein echter, umsetzbarer Mehrwert. VERWIRF insbesondere, wenn
+beide Akteure DERSELBE sind bzw. zur selben Serie/zum selben Träger/Veranstalter
+gehören (z.B. Erwachsenen- und Kinder-Variante desselben Clubs, oder zwei Formate
+am selben Ort desselben Anbieters) — das ist keine Synergie, sondern ein Angebot.
+Im Zweifel: reject.
 
 Ist sie sinnvoll (makes_sense): fülle „description“ als STRUKTURIERTE Markdown-
 Aufzählung (NICHT ein Textblock) mit genau diesen Punkten, je als eigene Zeile mit

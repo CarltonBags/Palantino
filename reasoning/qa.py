@@ -360,6 +360,25 @@ _BIZ_KW = (
 )
 
 
+def _same_actor(a: dict[str, Any], b: dict[str, Any]) -> bool:
+    """True if the two are really the same actor/series — a near-duplicate name
+    (Buch-Club ↔ Buch-Club Kids), one label contained in the other, or the same
+    venue (same host/location). Such a pair is not a synergy."""
+    import difflib
+
+    la, lb = (a.get("label") or "").lower().strip(), (b.get("label") or "").lower().strip()
+    if not la or not lb:
+        return False
+    if la in lb or lb in la:
+        return True
+    if difflib.SequenceMatcher(None, la, lb).ratio() >= 0.6:
+        return True
+    pa = a.get("properties") if isinstance(a.get("properties"), dict) else {}
+    pb = b.get("properties") if isinstance(b.get("properties"), dict) else {}
+    va, vb = (pa.get("venue") or "").lower().strip(), (pb.get("venue") or "").lower().strip()
+    return bool(va) and va == vb
+
+
 def _is_business_query(search_text: str) -> bool:
     t = (search_text or "").lower()
     return any(k in t for k in _BIZ_KW)
@@ -447,7 +466,7 @@ async def _deep_synergy_pairs(intent: dict[str, Any]) -> list[tuple[dict, dict, 
                 added = 0
                 for p in partners:
                     pid = str(p["id"])
-                    if pid == aid or used[pid] >= 2 or added >= 4:
+                    if pid == aid or used[pid] >= 2 or added >= 4 or _same_actor(anchor, p):
                         continue
                     used[pid] += 1
                     added += 1
