@@ -170,6 +170,13 @@ export default function ChatView({
             >
               Strukturell
             </button>
+            <button
+              className={mode === "deep" ? "on" : ""}
+              onClick={() => setMode("deep")}
+              title="5 Synergien, jede recherchiert (Graph + Websites) — dauert länger"
+            >
+              Tiefensuche
+            </button>
           </div>
         )}
         <div className="chat-input">

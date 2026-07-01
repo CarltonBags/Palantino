@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
-import { api, type StoredInsight } from "../api";
+import { api, type DeepSynergy, type StoredInsight } from "../api";
 
 interface Props {
   onOpenNode: (id: string) => void;
@@ -20,15 +20,19 @@ const TYPE_COLOR: Record<string, string> = {
 };
 
 export default function InsightsView({ onOpenNode, pipeline = "classic" }: Props) {
-  const [mode, setMode] = useState<"classic" | "structural" | "complementary">(pipeline);
+  const [mode, setMode] = useState<"classic" | "structural" | "complementary" | "deep">(pipeline);
   const structural = mode === "structural";
   const complementary = mode === "complementary";
+  const deep = mode === "deep";
   const [items, setItems] = useState<StoredInsight[]>([]);
   const [typeFilter, setTypeFilter] = useState("");
   const [scanning, setScanning] = useState(false);
   const [err, setErr] = useState<string | null>(null);
+  const [deepItems, setDeepItems] = useState<DeepSynergy[]>([]);
+  const [deepLoading, setDeepLoading] = useState(false);
 
   function load() {
+    if (mode === "deep") return;
     setErr(null);
     api
       .storedInsights("new", typeFilter || undefined, mode)
@@ -36,6 +40,19 @@ export default function InsightsView({ onOpenNode, pipeline = "classic" }: Props
       .catch((e) => setErr(String(e)));
   }
   useEffect(load, [typeFilter, mode]);
+
+  async function runDeep() {
+    setDeepLoading(true);
+    setErr(null);
+    try {
+      const r = await api.deepSynergies(5);
+      setDeepItems(r.synergies);
+    } catch (e) {
+      setErr(String(e));
+    } finally {
+      setDeepLoading(false);
+    }
+  }
 
   async function decide(id: string, status: "confirmed" | "dismissed") {
     await api.setInsightStatus(id, status);
@@ -93,7 +110,16 @@ export default function InsightsView({ onOpenNode, pipeline = "classic" }: Props
             <button className={complementary ? "on" : ""} onClick={() => setMode("complementary")}>
               Komplementär
             </button>
+            <button className={deep ? "on" : ""} onClick={() => setMode("deep")}>
+              Tiefensuche
+            </button>
           </div>
+          {deep && (
+            <div className="muted" style={{ marginBottom: 8 }}>
+              5 Synergien, jede recherchiert: die beteiligten Akteure werden im Graphen
+              UND auf ihren Websites geprüft — unplausible verworfen und ersetzt.
+            </div>
+          )}
           {structural && (
             <div className="muted" style={{ marginBottom: 8 }}>
               Räumliche Nähe statt Ähnlichkeit: anstehende Events neben noch nicht
@@ -107,7 +133,7 @@ export default function InsightsView({ onOpenNode, pipeline = "classic" }: Props
             </div>
           )}
           <div className="history-filters" style={{ alignItems: "center" }}>
-            {!structural && (
+            {!structural && !deep && (
               <div className="row">
                 <button className={typeFilter === "" ? "primary" : ""} onClick={() => setTypeFilter("")}>
                   Alle
@@ -126,23 +152,95 @@ export default function InsightsView({ onOpenNode, pipeline = "classic" }: Props
                 </button>
               </div>
             )}
-            <button className="primary" onClick={scan} disabled={scanning}>
-              {scanning ? "Suche läuft…" : "Neue suchen"}
-            </button>
+            {deep ? (
+              <button className="primary" onClick={runDeep} disabled={deepLoading}>
+                {deepLoading ? "Recherche läuft…" : "5 Synergien recherchieren"}
+              </button>
+            ) : (
+              <button className="primary" onClick={scan} disabled={scanning}>
+                {scanning ? "Suche läuft…" : "Neue suchen"}
+              </button>
+            )}
           </div>
         </div>
 
         {err && <div className="err">{err}</div>}
-        {!err && items.length === 0 && !scanning && (
+
+        {deep && (
+          <>
+            {deepLoading && (
+              <div className="muted" style={{ marginTop: 16 }}>
+                Akteure werden recherchiert (Graph + Websites)… das dauert einen Moment.
+              </div>
+            )}
+            {!deepLoading && deepItems.length === 0 && (
+              <div className="muted" style={{ marginTop: 16 }}>
+                „5 Synergien recherchieren“ starten.
+              </div>
+            )}
+            {deepItems.map((s, i) => (
+              <div className="insight-card" key={i} style={{ borderLeftColor: "#2dd4bf" }}>
+                <div className="ic-head">
+                  <span className="ic-type" style={{ color: "#2dd4bf" }}>
+                    <span className="dot" style={{ background: "#2dd4bf" }} />
+                    Synergie · recherchiert
+                  </span>
+                </div>
+                <div className="ic-title">{s.title}</div>
+                {s.partners?.length > 0 && (
+                  <div className="muted" style={{ marginBottom: 6 }}>{s.partners.join("  ↔  ")}</div>
+                )}
+                <div className="md ic-desc">
+                  <ReactMarkdown remarkPlugins={[remarkGfm]}>{s.description}</ReactMarkdown>
+                </div>
+                {s.first_step && (
+                  <div className="ic-reason">
+                    <span className="ic-label">Erster Schritt</span>
+                    {s.first_step}
+                  </div>
+                )}
+                {s.contacts && s.contacts.length > 0 && (
+                  <div className="ic-reason">
+                    <span className="ic-label">Kontakt</span>
+                    {s.contacts.join(", ")}
+                  </div>
+                )}
+                {s.researched_websites && s.researched_websites.length > 0 && (
+                  <div className="ic-belege">
+                    <span className="ic-label">Recherchiert</span>
+                    <div className="cites-row">
+                      {s.researched_websites.map((u) => (
+                        <a key={u} className="cite-chip" href={u} target="_blank" rel="noreferrer">
+                          {u.replace(/^https?:\/\//, "").slice(0, 32)}
+                        </a>
+                      ))}
+                    </div>
+                  </div>
+                )}
+                {s.evidence_node_ids?.length > 0 && (
+                  <div className="cites-row" style={{ marginTop: 8 }}>
+                    {s.evidence_node_ids.map((id, n) => (
+                      <button key={id} className="cite-chip" onClick={() => onOpenNode(id)}>
+                        Akteur {n + 1}
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+            ))}
+          </>
+        )}
+
+        {!deep && !err && items.length === 0 && !scanning && (
           <div className="muted" style={{ marginTop: 16 }}>
             Noch keine Erkenntnisse. „Neue suchen“ starten — das dauert einen Moment.
           </div>
         )}
-        {scanning && items.length === 0 && (
+        {!deep && scanning && items.length === 0 && (
           <div className="muted" style={{ marginTop: 16 }}>Der Graph wird durchsucht…</div>
         )}
 
-        {groups.map((g, gi) => (
+        {!deep && groups.map((g, gi) => (
           <div key={g.key} className="scan-group">
             <div className="scan-group-head">
               {g.older

@@ -333,6 +333,43 @@ def _intent_out(intent: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+async def _deep_synergy_answer(intent: dict[str, Any]) -> dict[str, Any]:
+    """Chat Tiefensuche: 5 researched + validated synergies, formatted as an answer."""
+    from reasoning.synergy_finder import find_synergies
+
+    syns = await find_synergies(n=5)
+    if not syns:
+        return {
+            "answer": "Es ließen sich keine belastbaren, recherchierten Synergien finden.",
+            "citations": [], "intent": _intent_out(intent),
+        }
+    parts = ["**5 recherchierte Synergien** — die Akteure wurden im Graphen und auf ihren Websites geprüft.\n"]
+    ids: list[str] = []
+    for i, s in enumerate(syns, 1):
+        parts.append(f"## {i}. {s.get('title', 'Synergie')}")
+        if s.get("partners"):
+            parts.append(f"*{' ↔ '.join(s['partners'])}*")
+        parts.append(s.get("description", ""))
+        if s.get("first_step"):
+            parts.append(f"**Erster Schritt:** {s['first_step']}")
+        if s.get("contacts"):
+            parts.append(f"**Kontakt:** {', '.join(s['contacts'])}")
+        if s.get("researched_websites"):
+            parts.append(f"**Recherchiert:** {', '.join(s['researched_websites'])}")
+        parts.append("")
+        ids.extend(s.get("evidence_node_ids", []))
+    async with get_conn() as conn:
+        rows = await conn.fetch(
+            f"SELECT {_NODE_COLS} FROM nodes WHERE id = ANY($1::uuid[]) AND valid_to IS NULL", ids
+        )
+    citations = [
+        {"id": str(r["id"]), "label": r["label"], "node_type": r["node_type"],
+         "source": r["source"], "source_url": r["source_url"]}
+        for r in rows
+    ]
+    return {"answer": "\n".join(parts), "citations": citations, "intent": _intent_out(intent)}
+
+
 async def answer_question(
     question: str, k: int = 24, lens_override: str | None = None, retrieval: str = "semantic"
 ) -> dict[str, Any]:
@@ -347,6 +384,10 @@ async def answer_question(
     intent = await extract_intent(question)
     if lens_override in _LENSES:
         intent["lens"] = lens_override
+    # Tiefensuche: run the research+validate synergy pipeline instead of a single
+    # answer (each partner researched in the graph + on their website).
+    if retrieval == "deep":
+        return await _deep_synergy_answer(intent)
     # Enumeration only makes sense for factual "list all X" queries; analytical
     # lenses always want the focused + graph-expanded subgraph, never a dump.
     list_mode = bool(intent["list"]) and intent["lens"] == "factual"
