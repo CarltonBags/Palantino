@@ -41,6 +41,7 @@ from connectors.oparl.connector import OParlConnector
 from connectors.offeneregister.connector import OffeneRegisterConnector
 from connectors.overpass.connector import OverpassConnector
 from connectors.ssb_dortmund.connector import SSBDortmundConnector
+from connectors.tiefbau_programm.connector import TiefbauProgrammConnector
 from connectors.polizei_rss.connector import PolizeiRssConnector
 from connectors.strassen.connector import StrassenConnector
 from connectors.strassenabschnitte.connector import StrassenabschnitteConnector
@@ -387,6 +388,11 @@ async def run_ssb_dortmund() -> None:
 @flow(name="offeneregister-companies", log_prints=True)
 async def run_offeneregister() -> None:
     await _run_node_connector(OffeneRegisterConnector(), get_run_logger())
+
+
+@flow(name="tiefbau-programm", log_prints=True)
+async def run_tiefbau_programm() -> None:
+    await _run_node_connector(TiefbauProgrammConnector(), get_run_logger())
 
 
 # ── Embeddings (semantic layer) ───────────────────────────────────────────────

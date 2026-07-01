@@ -88,6 +88,7 @@ async def _run_all() -> None:
         ("overpass", flows.run_overpass),
         ("ssb_dortmund", flows.run_ssb_dortmund),
         ("offeneregister", flows.run_offeneregister),
+        ("tiefbau_programm", flows.run_tiefbau_programm),
         ("gremientermine", flows.run_gremientermine),
         ("gremienniederschriften", flows.run_gremienniederschriften),
         ("text_linking", flows.run_text_linking),
