@@ -178,6 +178,13 @@ export default function ChatView({
               Komplementär
             </button>
             <button
+              className={mode === "graph" ? "on" : ""}
+              onClick={() => setMode("graph")}
+              title="Gemeinsamer Kontext im Graphen (z.B. im selben Artikel genannt)"
+            >
+              Graph
+            </button>
+            <button
               className={mode === "deep" ? "on" : ""}
               onClick={() => setMode("deep")}
               title="5 Synergien, jede recherchiert (Graph + Websites) — dauert länger"

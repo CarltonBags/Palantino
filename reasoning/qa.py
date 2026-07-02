@@ -626,8 +626,22 @@ async def answer_question(
     lens_synergy = intent["lens"] in {"synergy", "leads"} and not list_mode
     structural = retrieval == "structural" and lens_synergy
     complementary = retrieval == "complementary" and lens_synergy
+    graph = retrieval == "graph" and lens_synergy
     async with get_conn() as conn:
-        if structural or complementary:
+        if graph:
+            # ONLY the graph-structural signal: query-relevant seeds → actors
+            # co-mentioned with them in the same news article (shared context).
+            seeds = await _diverse_seeds(conn, qvec, min(k_eff, 14), intent)
+            biz = _is_business_query(intent["search_text"])
+            seen = {str(s["id"]) for s in seeds}
+            extra: list[dict[str, Any]] = []
+            for sid in [str(s["id"]) for s in seeds]:
+                for r in await _cooccurrence_partners(conn, sid, biz, cap=4):
+                    if str(r["id"]) not in seen:
+                        seen.add(str(r["id"]))
+                        extra.append(r)
+            nodes = seeds + extra
+        elif structural or complementary:
             # query-relevant seeds, then their partners: proximity (structural) or
             # need↔offer fit (complementary). The pairs are the signal (no expand).
             geo_intent = {**intent, "node_types": intent["node_types"] or ["Event", "POI"]}
@@ -659,9 +673,9 @@ async def answer_question(
             }
         ids = [str(n["id"]) for n in nodes]
         # Multi-hop graph expansion (analytical/factual only — not enumeration).
-        # Skipped in structural/complementary: the pairs ARE the signal, and
+        # Skipped in structural/complementary/graph: the pairs ARE the signal, and
         # expansion would flood them with text neighbours (AgendaItem/Road).
-        if not list_mode and not structural and not complementary:
+        if not list_mode and not structural and not complementary and not graph:
             ids = await _expand(conn, ids, max_total=40)
             nodes = await conn.fetch(
                 f"SELECT {_NODE_COLS} FROM nodes WHERE id = ANY($1::uuid[]) AND valid_to IS NULL",
