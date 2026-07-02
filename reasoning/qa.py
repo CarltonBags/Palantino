@@ -342,6 +342,35 @@ async def _complementary_partners(
     return [str(r["pid"]) for r in rows]
 
 
+async def _cooccurrence_partners(
+    conn: Any, anchor_id: str, business: bool, cap: int = 6,
+) -> list[dict[str, Any]]:
+    """Graph-structural signal: actors named in the SAME news article as the anchor
+    (shared `MENTIONS`) but not directly linked. Co-occurrence in one article means
+    they already share a real-world context — a stronger synergy cue than embedding
+    similarity, and one only the graph knows."""
+    rows = await conn.fetch(
+        f"""
+        SELECT DISTINCT n.id, n.node_type, n.label, n.properties, n.source,
+               n.source_url, n.valid_from
+        FROM edges m1
+        JOIN edges m2 ON m2.from_node_id = m1.from_node_id
+             AND m2.edge_type = 'MENTIONS' AND m2.valid_to IS NULL
+             AND m2.to_node_id <> $1::uuid
+        JOIN nodes n ON n.id = m2.to_node_id AND n.valid_to IS NULL
+             AND {_actor_clause('n', business)}
+        WHERE m1.edge_type = 'MENTIONS' AND m1.to_node_id = $1::uuid
+          AND m1.valid_to IS NULL
+          AND NOT EXISTS (SELECT 1 FROM edges g WHERE g.valid_to IS NULL
+              AND ((g.from_node_id = $1::uuid AND g.to_node_id = n.id)
+                OR (g.from_node_id = n.id AND g.to_node_id = $1::uuid)))
+        LIMIT {cap}
+        """,
+        anchor_id,
+    )
+    return [dict(r) for r in rows]
+
+
 def _intent_out(intent: dict[str, Any]) -> dict[str, Any]:
     return {
         "lens": intent.get("lens", "factual"),
@@ -481,6 +510,8 @@ async def _deep_synergy_pairs(intent: dict[str, Any]) -> list[tuple[dict, dict, 
                             prox,
                         )
                         partners += [dict(r) for r in prows]
+                # graph-structural: actors co-mentioned in the same news article
+                partners += await _cooccurrence_partners(conn, aid, business)
                 added = 0
                 for p in partners:
                     pid = str(p["id"])
