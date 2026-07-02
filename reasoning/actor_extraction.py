@@ -72,8 +72,14 @@ async def extract_news_actors(limit: int = 200, months: int = 60) -> dict[str, i
             limit, list(_NEWS_SOURCES), months,
         )
 
+    from embeddings.backfill import embed_nodes
+
     counts = {"articles": 0, "actors": 0, "mentions": 0}
     for a in arts:
+        # periodic embed flush: keep new actors visible even if the run is killed
+        # mid-way (embedding lags extraction otherwise).
+        if counts["articles"] and counts["articles"] % 100 == 0:
+            await embed_nodes()
         counts["articles"] += 1
         props = a["properties"] if isinstance(a["properties"], dict) else {}
         text = (props.get("description") or props.get("subtitle") or "")[:1600]
@@ -115,5 +121,6 @@ async def extract_news_actors(limit: int = 200, months: int = 60) -> dict[str, i
             )
             if edge_new:
                 counts["mentions"] += 1
+    await embed_nodes()  # final flush: everything extracted is embedded
     logger.info("actor extraction: %s", counts)
     return counts

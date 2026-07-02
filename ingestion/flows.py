@@ -375,12 +375,16 @@ async def run_polizei_rss() -> None:
 
 @flow(name="nordstadtblogger", log_prints=True)
 async def run_nordstadtblogger() -> None:
-    await _run_node_connector(NordstadtbloggerConnector(), get_run_logger())
+    log = get_run_logger()
+    await _run_node_connector(NordstadtbloggerConnector(), log)
+    log.info("actors from new news: %s", await _maintain_actor_layer(limit=300))
 
 
 @flow(name="wirindortmund", log_prints=True)
 async def run_wirindortmund() -> None:
-    await _run_node_connector(WirInDortmundConnector(), get_run_logger())
+    log = get_run_logger()
+    await _run_node_connector(WirInDortmundConnector(), log)
+    log.info("actors from new news: %s", await _maintain_actor_layer(limit=300))
 
 
 @flow(name="ssb-dortmund-clubs", log_prints=True)
@@ -890,15 +894,25 @@ async def run_resolution() -> None:
         raise
 
 
+async def _maintain_actor_layer(limit: int = 400) -> dict[str, int]:
+    """Extract actors from not-yet-processed news, tag them (need/offer), and embed.
+    Extraction embeds incrementally, so a killed run still leaves actors visible.
+    Used by the backlog flow AND chained after each news ingest."""
+    from reasoning.actor_extraction import extract_news_actors
+    from reasoning.resource_enrich import enrich_actors
+
+    counts = await extract_news_actors(limit=limit)
+    counts["tagged"] = await enrich_actors(limit=limit)
+    return counts
+
+
 @flow(name="news-actor-extraction", log_prints=True)
 async def run_actor_extraction() -> None:
-    """Extract real actors (orgs/initiatives) from recent news articles."""
-    from reasoning.actor_extraction import extract_news_actors
-
+    """Backlog sweep: extract + tag + embed actors from unprocessed news."""
     log = get_run_logger()
     run_id = await _start_run("news_actor_extraction")
     try:
-        counts = await extract_news_actors(limit=400)
+        counts = await _maintain_actor_layer(limit=400)
         log.info("actor extraction done: %s", counts)
         await _finish_run(run_id, "news_actor_extraction", counts["actors"], counts["mentions"])
     except Exception as exc:
@@ -990,5 +1004,7 @@ if __name__ == "__main__":
         # resolution + reasoning — after the daily ingests settle
         run_text_linking.to_deployment(name="text-linking-daily", cron="30 7 * * *"),
         run_embed_nodes.to_deployment(name="embed-nodes-daily", cron="45 7 * * *"),
+        # backlog sweep for actors (news ingests also extract on the fly every 6h)
+        run_actor_extraction.to_deployment(name="news-actor-extraction-daily", cron="50 7 * * *"),
         run_insight_scan.to_deployment(name="insight-scan-daily", cron="0 8 * * *"),
     )
