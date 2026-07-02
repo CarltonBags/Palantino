@@ -200,16 +200,30 @@ ein Ort als Stadtbezirk UND statistischer Bezirk) — das sind keine Ineffizienz
     "synergy": _ANALYSIS_BASE + """
 
 Aufgabe: Finde UNGENUTZTE SYNERGIEN — noch nicht verbundene Gelegenheiten, bei
-denen zwei Vorgänge/Akteure sich gegenseitig verstärken könnten, wenn jemand sie
+denen zwei Akteure sich gegenseitig verstärken könnten, wenn jemand sie
 koordinierte. Nur ECHTES, zeitlich aktuelles Potenzial (keine bereits realisierten
-Verbindungen, keine Jahre alten, abgeschlossenen Vorgänge). Bündle keine Events
-desselben kommerziellen Veranstaltungsorts miteinander. Begründe je Gelegenheit
-den Mechanismus und was zur Umsetzung nötig wäre.
-- ANSPRECHPARTNER: Wenn zu den beteiligten Akteuren in den Fakten Kontaktdaten
-  vorliegen (Eigenschaften contact_email / contact_phone / contact_website / email
-  / phone / website), nenne sie je Akteur als konkrete Kontaktmöglichkeit, um die
-  Synergie vorzuschlagen. Erfinde KEINE Kontaktdaten; nenne nur die, die in den
-  Fakten stehen, und nur geschäftliche/institutionelle Kontakte.""",
+Verbindungen, keine Jahre alten/abgeschlossenen Vorgänge). Bündle keine Events
+desselben Veranstaltungsorts und nicht denselben Akteur mit sich selbst.
+PRÜFE JEDE Synergie kritisch (Zielgruppe/Anlass-Test): Würde DASSELBE Publikum
+plausibel beide Angebote nutzen? Wenn nein → NICHT nennen. Lieber eine echte
+Synergie als fünf erzwungene. Erfinde nichts.
+
+FESTES AUSGABEFORMAT — je Synergie GENAU diese Struktur, ausführlich:
+
+## <Kurztitel der Synergie>
+*Akteur A ↔ Akteur B*
+- **Akteur A:** wer/was, für wen (1–2 Sätze).
+- **Akteur B:** wer/was, für wen (1–2 Sätze).
+- **Gemeinsame Zielgruppe / Anlass:** das konkrete geteilte Publikum bzw. der Anlass.
+- **Warum es funktioniert:** ausführliche Begründung (mindestens 3–4 Sätze) — warum
+  die Zielgruppen/Anlässe zusammenpassen UND was JEDE Seite gewinnt (beidseitiger
+  Nutzen, nicht nur einseitig).
+- **Wie es abläuft:** konkreter Ablauf der Zusammenarbeit (mindestens 3–4 Sätze) —
+  wer macht was, wie greifen die Angebote praktisch ineinander.
+- **Synergie-Potenzial:** der konkrete Mehrwert/Effekt.
+- **Erster Schritt:** eine konkrete, sofort umsetzbare erste Handlung.
+- **Kontakt:** NUR belegte Kontaktdaten aus den Fakten (contact_email/-phone/
+  -website / email / phone / website), sonst diese Zeile weglassen. Erfinde nichts.""",
     "scandal": _ANALYSIS_BASE + """
 
 Aufgabe: DECKE NICHT-OFFENSICHTLICHE, potenzielle Auffälligkeiten auf, die eine
@@ -424,9 +438,10 @@ bereits verbundene Akteure; DERSELBE Akteur / gleiche Serie/Träger; kein echter
 Mehrwert. Im Zweifel: reject.
 
 Antworte NUR als JSON-Liste — GENAU EIN Eintrag pro Kandidat, in der Reihenfolge der
-Kandidaten:
+Kandidaten. `description` MUSS diese feste, AUSFÜHRLICHE Struktur haben (Markdown-
+Bulletliste, jede Erklärung mehrere Sätze):
 [{{"partner_index":<int>,"verdict":"makes_sense|reject","reason":"...","title":"...",
-  "description":"- **Akteur A:** …\\n- **Akteur B:** …\\n- **Gemeinsame Zielgruppe / Anlass:** …\\n- **Mechanismus:** …\\n- **Synergie-Potenzial:** …",
+  "description":"- **Akteur A:** wer/was, für wen.\\n- **Akteur B:** wer/was, für wen.\\n- **Gemeinsame Zielgruppe / Anlass:** das geteilte Publikum bzw. der Anlass.\\n- **Warum es funktioniert:** ausführliche Begründung, 3–4 Sätze — warum die Zielgruppen zusammenpassen UND was JEDE Seite gewinnt.\\n- **Wie es abläuft:** konkreter Ablauf der Zusammenarbeit, 3–4 Sätze — wer macht was, wie greifen die Angebote ineinander.\\n- **Synergie-Potenzial:** der konkrete Mehrwert/Effekt.",
   "first_step":"...","contacts":["..."],"cross_domain":true|false}}]
 Alle Textfelder auf Deutsch."""
 
