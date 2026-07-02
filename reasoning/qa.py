@@ -371,6 +371,53 @@ async def _cooccurrence_partners(
     return [dict(r) for r in rows]
 
 
+async def _link_prediction_partners(
+    conn: Any, seed_ids: list[str], business: bool, cap: int = 12,
+) -> list[dict[str, Any]]:
+    """Graph link prediction: actors that share SPECIFIC neighbours with the seeds
+    (same articles, events, tenders, themes) but are NOT directly linked — ranked by
+    how many such shared connections they have. Hub connectors (GeoArea, and any
+    node wired to >60 others = a district-like hub) are excluded so a shared
+    Stadtbezirk doesn't link everything; a shared niche event/article counts. This
+    is 'should-connect-but-doesn't', the real untapped-synergy signal (co-mention is
+    its single-shared-neighbour special case)."""
+    if not seed_ids:
+        return []
+    rows = await conn.fetch(
+        f"""
+        WITH nbr AS (
+            SELECT s.seed, mm.mid
+            FROM unnest($1::uuid[]) AS s(seed)
+            JOIN edges e ON (e.from_node_id = s.seed OR e.to_node_id = s.seed)
+                 AND e.valid_to IS NULL
+            CROSS JOIN LATERAL (SELECT CASE WHEN e.from_node_id = s.seed
+                                THEN e.to_node_id ELSE e.from_node_id END AS mid) mm
+            JOIN nodes mn ON mn.id = mm.mid AND mn.node_type <> 'GeoArea'
+            WHERE (SELECT count(*) FROM edges h
+                   WHERE (h.from_node_id = mm.mid OR h.to_node_id = mm.mid)
+                     AND h.valid_to IS NULL) <= 60
+        )
+        SELECT p.id, p.node_type, p.label, p.properties, p.source, p.source_url,
+               p.valid_from, count(DISTINCT nbr.mid) AS shared
+        FROM nbr
+        JOIN edges e2 ON (e2.from_node_id = nbr.mid OR e2.to_node_id = nbr.mid)
+             AND e2.valid_to IS NULL
+        CROSS JOIN LATERAL (SELECT CASE WHEN e2.from_node_id = nbr.mid
+                            THEN e2.to_node_id ELSE e2.from_node_id END AS pid) pp
+        JOIN nodes p ON p.id = pp.pid AND p.valid_to IS NULL AND {_actor_clause('p', business)}
+        WHERE p.id <> nbr.seed
+          AND NOT EXISTS (SELECT 1 FROM edges g WHERE g.valid_to IS NULL
+              AND ((g.from_node_id = nbr.seed AND g.to_node_id = p.id)
+                OR (g.from_node_id = p.id AND g.to_node_id = nbr.seed)))
+        GROUP BY p.id, p.node_type, p.label, p.properties, p.source, p.source_url, p.valid_from
+        ORDER BY shared DESC
+        LIMIT $2
+        """,
+        seed_ids, cap,
+    )
+    return [dict(r) for r in rows]
+
+
 def _intent_out(intent: dict[str, Any]) -> dict[str, Any]:
     return {
         "lens": intent.get("lens", "factual"),
@@ -510,8 +557,8 @@ async def _deep_synergy_pairs(intent: dict[str, Any]) -> list[tuple[dict, dict, 
                             prox,
                         )
                         partners += [dict(r) for r in prows]
-                # graph-structural: actors co-mentioned in the same news article
-                partners += await _cooccurrence_partners(conn, aid, business)
+                # graph-structural: actors sharing specific neighbours (link prediction)
+                partners += await _link_prediction_partners(conn, [aid], business, cap=4)
                 added = 0
                 for p in partners:
                     pid = str(p["id"])
@@ -629,18 +676,16 @@ async def answer_question(
     graph = retrieval == "graph" and lens_synergy
     async with get_conn() as conn:
         if graph:
-            # ONLY the graph-structural signal: query-relevant seeds → actors
-            # co-mentioned with them in the same news article (shared context).
-            seeds = await _diverse_seeds(conn, qvec, min(k_eff, 14), intent)
+            # ONLY the graph-structural signal: query-relevant actor seeds → actors
+            # that share specific neighbours (articles/events/tenders) but aren't
+            # linked — weighted common-neighbour link prediction.
+            graph_intent = {**intent, "node_types": intent["node_types"] or ["Event", "POI", "Organization"]}
+            seeds = await _diverse_seeds(conn, qvec, min(k_eff, 14), graph_intent)
             biz = _is_business_query(intent["search_text"])
-            seen = {str(s["id"]) for s in seeds}
-            extra: list[dict[str, Any]] = []
-            for sid in [str(s["id"]) for s in seeds]:
-                for r in await _cooccurrence_partners(conn, sid, biz, cap=4):
-                    if str(r["id"]) not in seen:
-                        seen.add(str(r["id"]))
-                        extra.append(r)
-            nodes = seeds + extra
+            seed_ids = [str(s["id"]) for s in seeds]
+            part = await _link_prediction_partners(conn, seed_ids, biz, cap=16)
+            seen = set(seed_ids)
+            nodes = seeds + [r for r in part if str(r["id"]) not in seen]
         elif structural or complementary:
             # query-relevant seeds, then their partners: proximity (structural) or
             # need↔offer fit (complementary). The pairs are the signal (no expand).
