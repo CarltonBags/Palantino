@@ -583,6 +583,7 @@ async def _deep_synergy_answer(intent: dict[str, Any]) -> dict[str, Any]:
     results = await find_synergies(n=5, pairs=pairs, shuffle=False)
 
     validated = [r for r in results if r.get("verdict") == "makes_sense" and r.get("description")]
+    validated.sort(key=lambda r: not r.get("cross_domain"))  # non-obvious bridges first
     rejected = [r for r in results if r.get("verdict") == "reject"]
 
     parts: list[str] = []
@@ -592,7 +593,8 @@ async def _deep_synergy_answer(intent: dict[str, Any]) -> dict[str, Any]:
             "auf ihren Websites geprüft.\n"
         )
         for i, s in enumerate(validated, 1):
-            parts.append(f"## {i}. {s.get('title', 'Synergie')}")
+            marker = " 🌉 *feldübergreifend*" if s.get("cross_domain") else ""
+            parts.append(f"## {i}. {s.get('title', 'Synergie')}{marker}")
             if s.get("partners"):
                 parts.append(f"*{' ↔ '.join(s['partners'])}*")
             parts.append(s.get("description", ""))

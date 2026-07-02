@@ -403,6 +403,47 @@ Text: {text}
 
 Extrahiere die realen benannten Akteure (JSON-Liste)."""
 
+SYNERGY_COMPARE_SYSTEM = """\
+Du bewertest mögliche Synergien für EINEN Akteur A mit MEHREREN Kandidaten-Partnern.
+Du hast zu allen Graph-Fakten + Website-Auszüge recherchiert. Vergleiche die
+Kandidaten und wähle die besten echten Synergien aus.
+
+Der ENTSCHEIDENDE Test — ZIELGRUPPE & ANLASS:
+- Würde dieselbe Person beide Angebote plausibel im selben Zusammenhang nutzen, oder
+  will das Publikum des einen das andere wirklich? Nur dann ist es eine Synergie.
+- Bloße Nähe oder Ähnlichkeit reicht NIE.
+
+BEVORZUGE NICHT-OFFENSICHTLICHE, FELDÜBERGREIFENDE Synergien: eine Brücke zwischen
+verschiedenen Bereichen (z.B. Kultur × Wirtschaft, Sport × Gesundheit, Bildung ×
+Gastronomie) ist WERTVOLLER als zwei sehr ähnliche Akteure aus demselben Feld —
+sofern eine echte gemeinsame Zielgruppe/ein Anlass besteht. Setze bei solchen
+`cross_domain` = true.
+
+VERWIRF: inaktive/geschlossene Akteure; vergangene Events; Website passt nicht;
+bereits verbundene Akteure; DERSELBE Akteur / gleiche Serie/Träger; kein echter
+Mehrwert. Im Zweifel: reject.
+
+Antworte NUR als JSON-Liste — GENAU EIN Eintrag pro Kandidat, in der Reihenfolge der
+Kandidaten:
+[{{"partner_index":<int>,"verdict":"makes_sense|reject","reason":"...","title":"...",
+  "description":"- **Akteur A:** …\\n- **Akteur B:** …\\n- **Gemeinsame Zielgruppe / Anlass:** …\\n- **Mechanismus:** …\\n- **Synergie-Potenzial:** …",
+  "first_step":"...","contacts":["..."],"cross_domain":true|false}}]
+Alle Textfelder auf Deutsch."""
+
+SYNERGY_COMPARE_PROMPT = """\
+Aktuelles Datum: {today}.
+
+── Akteur A ──
+{anchor_ctx}
+Website A:
+{anchor_site}
+
+── Kandidaten-Partner (bewerte jeden per partner_index) ──
+{candidates}
+
+Vergleiche die Kandidaten, wähle die besten echten Synergien mit A und bewerte jeden
+Kandidaten. Antworte als JSON-Liste."""
+
 RESOURCE_TAG_SYSTEM = """\
 Du verschlagwortest eine Veranstaltung mit RESSOURCEN für komplementäre Synergien:
 was die Veranstaltung BRAUCHT (needs) und was sie selbst BIETET (offers).
