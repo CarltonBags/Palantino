@@ -679,12 +679,26 @@ async def answer_question(
             # ONLY the graph-structural signal: query-relevant actor seeds → actors
             # that share specific neighbours (articles/events/tenders) but aren't
             # linked — weighted common-neighbour link prediction.
-            graph_intent = {**intent, "node_types": intent["node_types"] or ["Event", "POI", "Organization"]}
-            seeds = await _diverse_seeds(conn, qvec, min(k_eff, 14), graph_intent)
             biz = _is_business_query(intent["search_text"])
+            g_actor = _actor_clause("n", biz)
+            # honor the query: fuzzy NAME-match seeds first, so a query about a named
+            # actor anchors on it (not just the semantic theme), then semantic seeds.
+            name_seeds = await conn.fetch(
+                f"""SELECT {_NODE_COLS} FROM nodes n WHERE n.valid_to IS NULL AND {g_actor}
+                    AND similarity(lower(n.label), lower($1)) > 0.3
+                    ORDER BY similarity(lower(n.label), lower($1)) DESC LIMIT 3""",
+                intent["search_text"],
+            )
+            graph_intent = {**intent, "node_types": intent["node_types"] or ["Event", "POI", "Organization"]}
+            sem_seeds = await _diverse_seeds(conn, qvec, min(k_eff, 12), graph_intent)
+            seen = set()
+            seeds = []
+            for r in list(name_seeds) + list(sem_seeds):
+                if str(r["id"]) not in seen:
+                    seen.add(str(r["id"]))
+                    seeds.append(dict(r))
             seed_ids = [str(s["id"]) for s in seeds]
             part = await _link_prediction_partners(conn, seed_ids, biz, cap=16)
-            seen = set(seed_ids)
             nodes = seeds + [r for r in part if str(r["id"]) not in seen]
         elif structural or complementary:
             # query-relevant seeds, then their partners: proximity (structural) or
