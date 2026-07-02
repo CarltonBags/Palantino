@@ -480,7 +480,14 @@ async def run_dortmund_events() -> None:
             "Event", connector.source_name, source_filter=connector.source_name
         )
         edges_written += await _link_events_to_bezirke(connector.source_name)
-        log.info("dortmund-events done: %d nodes, %d edges", nodes_written, edges_written)
+        # materialise venue actors from the new events (+ tag + embed)
+        from reasoning.resource_enrich import enrich_actors
+        from reasoning.venue_extraction import extract_event_venues
+        from embeddings.backfill import embed_nodes
+        vc = await extract_event_venues(limit=300)
+        await enrich_actors(limit=300)
+        await embed_nodes()
+        log.info("dortmund-events done: %d nodes, %d edges, venues %s", nodes_written, edges_written, vc)
         await _finish_run(run_id, connector.source_name, nodes_written, edges_written)
     except Exception as exc:
         log.error("dortmund-events failed: %s", exc, exc_info=True)

@@ -100,13 +100,13 @@ async def enrich_events(limit: int = 200) -> int:
 
 
 async def enrich_actors(limit: int = 400) -> int:
-    """LLM-tag news-extracted civic actors (Vereine/Projekte/Einrichtungen) with
+    """LLM-tag extracted actors (news civic actors + calendar venues) with
     needs/offers, so they can take part in complementary synergies."""
     async with get_conn() as c:
         actors = await c.fetch(
             """
             SELECT id, label, properties FROM nodes n
-            WHERE source = 'news_extraction' AND valid_to IS NULL
+            WHERE source IN ('news_extraction', 'event_venue') AND valid_to IS NULL
               AND NOT EXISTS (SELECT 1 FROM node_resources nr WHERE nr.node_id = n.id)
             LIMIT $1
             """,

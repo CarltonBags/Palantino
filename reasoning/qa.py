@@ -468,7 +468,7 @@ def _actor_clause(alias: str, business: bool) -> str:
     parts = [
         f"({a}.node_type = 'POI' AND {a}.label NOT LIKE 'OSM %')",
         f"({a}.node_type = 'Event' AND coalesce({a}.properties->>'event_type','') <> 'news')",
-        f"({a}.node_type = 'Organization' AND {a}.source = 'news_extraction')",
+        f"({a}.node_type = 'Organization' AND {a}.source IN ('news_extraction', 'event_venue'))",
     ]
     if business:
         parts.append(
