@@ -486,10 +486,13 @@ async def _deep_synergy_pairs(intent: dict[str, Any]) -> list[tuple[dict, dict, 
     dominate every result."""
     from collections import Counter
 
+    from reasoning.synergy_finder import pair_key, suppressed_pair_keys
+
     qvec = (await embed_texts([intent["search_text"]]))[0]
     qlit = to_pgvector(qvec)
     pairs: list[tuple[dict, dict, str]] = []
     used: Counter[str] = Counter()
+    suppressed = await suppressed_pair_keys()  # feedback loop: skip rejected/dismissed
 
     async with get_conn() as conn:
         async with conn.transaction():
@@ -562,7 +565,9 @@ async def _deep_synergy_pairs(intent: dict[str, Any]) -> list[tuple[dict, dict, 
                 added = 0
                 for p in partners:
                     pid = str(p["id"])
-                    if pid == aid or used[pid] >= 2 or added >= 4 or _same_actor(anchor, p):
+                    if (pid == aid or used[pid] >= 2 or added >= 4
+                            or _same_actor(anchor, p)
+                            or pair_key(aid, pid) in suppressed):
                         continue
                     used[pid] += 1
                     added += 1
@@ -577,10 +582,11 @@ async def _deep_synergy_pairs(intent: dict[str, Any]) -> list[tuple[dict, dict, 
 async def _deep_synergy_answer(intent: dict[str, Any]) -> dict[str, Any]:
     """Chat Tiefensuche: research + validate synergies SCOPED to the question;
     show validated ones and the ones checked & rejected (with reason)."""
-    from reasoning.synergy_finder import find_synergies
+    from reasoning.synergy_finder import find_synergies, record_synergy_feedback
 
     pairs = await _deep_synergy_pairs(intent)
     results = await find_synergies(n=5, pairs=pairs, shuffle=False)
+    await record_synergy_feedback(results, source="llm")  # learn: don't re-judge these
 
     validated = [r for r in results if r.get("verdict") == "makes_sense" and r.get("description")]
     validated.sort(key=lambda r: not r.get("cross_domain"))  # non-obvious bridges first

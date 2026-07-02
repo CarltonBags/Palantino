@@ -50,6 +50,47 @@ def _parse_obj(raw: str) -> dict[str, Any]:
         return {}
 
 
+def pair_key(a: str, b: str) -> str:
+    x, y = sorted([str(a), str(b)])
+    return f"{x}|{y}"
+
+
+async def suppressed_pair_keys() -> set[str]:
+    """Pairs the finder or the user judged negative — skip them in generation."""
+    async with get_conn() as conn:
+        rows = await conn.fetch(
+            "SELECT pair_key FROM synergy_feedback WHERE verdict IN ('reject','dismissed')"
+        )
+    return {r["pair_key"] for r in rows}
+
+
+async def record_synergy_feedback(results: list[dict[str, Any]], source: str = "llm") -> int:
+    """Persist verdicts on pairs. User verdicts outrank the LLM's (a later llm write
+    never clobbers a user one)."""
+    rows = []
+    for r in results:
+        ev = r.get("evidence_node_ids") or []
+        if len(ev) < 2 or not r.get("verdict"):
+            continue
+        a, b = sorted([str(ev[0]), str(ev[1])])
+        rows.append((f"{a}|{b}", a, b, r["verdict"], (r.get("reason") or "")[:500], source))
+    if not rows:
+        return 0
+    async with get_conn() as conn:
+        await conn.executemany(
+            """
+            INSERT INTO synergy_feedback (pair_key, node_a, node_b, verdict, reason, source, updated_at)
+            VALUES ($1,$2::uuid,$3::uuid,$4,$5,$6, now())
+            ON CONFLICT (pair_key) DO UPDATE SET
+                verdict = EXCLUDED.verdict, reason = EXCLUDED.reason,
+                source = EXCLUDED.source, updated_at = now()
+            WHERE synergy_feedback.source <> 'user' OR EXCLUDED.source = 'user'
+            """,
+            rows,
+        )
+    return len(rows)
+
+
 def _parse_list(raw: str) -> list[dict[str, Any]]:
     text = (raw or "").strip()
     if text.startswith("```"):

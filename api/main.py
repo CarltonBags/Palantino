@@ -641,11 +641,17 @@ async def set_insight_status(insight_id: UUID, req: InsightStatusRequest) -> dic
         raise HTTPException(status_code=400, detail="Invalid status")
     async with get_conn() as conn:
         row = await conn.fetchrow(
-            "UPDATE insights SET status = $2 WHERE id = $1 RETURNING id",
+            "UPDATE insights SET status = $2 WHERE id = $1 RETURNING id, evidence_node_ids::text[] AS ev",
             str(insight_id), req.status,
         )
     if not row:
         raise HTTPException(status_code=404, detail="Insight not found")
+    # feedback loop: a user confirm/dismiss teaches the synergy finder (user > llm)
+    if req.status in ("confirmed", "dismissed") and len(row["ev"] or []) >= 2:
+        from reasoning.synergy_finder import record_synergy_feedback
+        await record_synergy_feedback(
+            [{"evidence_node_ids": row["ev"], "verdict": req.status}], source="user"
+        )
     return {"id": str(insight_id), "status": req.status}
 
 
