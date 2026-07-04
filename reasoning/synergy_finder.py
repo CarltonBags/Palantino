@@ -56,12 +56,20 @@ def pair_key(a: str, b: str) -> str:
 
 
 async def suppressed_pair_keys() -> set[str]:
-    """Pairs the finder or the user judged negative — skip them in generation."""
+    """Pairs that must never be proposed as partners: ones the finder or the
+    user judged negative, plus pairs entity resolution merged (SAME_AS) — an
+    actor can't have a synergy with its own register entry or storefront."""
     async with get_conn() as conn:
         rows = await conn.fetch(
             "SELECT pair_key FROM synergy_feedback WHERE verdict IN ('reject','dismissed')"
         )
-    return {r["pair_key"] for r in rows}
+        same = await conn.fetch(
+            "SELECT from_node_id, to_node_id FROM edges"
+            " WHERE edge_type = 'SAME_AS' AND valid_to IS NULL"
+        )
+    keys = {r["pair_key"] for r in rows}
+    keys |= {pair_key(r["from_node_id"], r["to_node_id"]) for r in same}
+    return keys
 
 
 async def record_synergy_feedback(results: list[dict[str, Any]], source: str = "llm") -> int:
@@ -87,6 +95,17 @@ async def record_synergy_feedback(results: list[dict[str, Any]], source: str = "
             WHERE synergy_feedback.source <> 'user' OR EXCLUDED.source = 'user'
             """,
             rows,
+        )
+        # keep the all-pairs frontier in sync: judged pairs leave `new` at once,
+        # not only at the next candidate refresh
+        await conn.execute(
+            """
+            UPDATE synergy_candidates sc
+            SET status = CASE WHEN f.verdict IN ('reject', 'dismissed')
+                              THEN 'suppressed' ELSE 'validated' END
+            FROM synergy_feedback f
+            WHERE f.pair_key = sc.pair_key AND sc.status = 'new'
+            """
         )
     return len(rows)
 
@@ -214,6 +233,15 @@ async def _global_pairs(pool: int = 40) -> list[tuple[dict, dict, str]]:
         structural_synergy_candidates,
     )
 
+    # First choice: the precomputed all-pairs frontier (candidate_engine) —
+    # the highest-scoring not-yet-validated pairs across the whole actor set.
+    from reasoning.candidate_engine import frontier_pairs
+
+    frontier = await frontier_pairs(limit=pool)
+    if len(frontier) >= pool // 2:
+        return frontier
+
+    # Fallback (frontier empty / not yet refreshed): the live generators.
     # Favour complementary (need↔offer = real audience/occasion fit) over pure
     # proximity, which produces near-but-incompatible pairs.
     from collections import Counter
@@ -248,6 +276,11 @@ async def find_synergies(
     """
     if pairs is None:
         pairs = await _global_pairs(pool=40)
+    suppressed = await suppressed_pair_keys()
+    pairs = [
+        (a, b, note) for a, b, note in pairs
+        if pair_key(str(a["id"]), str(b["id"])) not in suppressed
+    ]
 
     # Group by anchor (first node of each pair) → one comparative LLM call per anchor
     # over all its candidate partners (fewer calls, better selection).
