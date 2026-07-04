@@ -29,6 +29,8 @@ _PROP_KEYS = (
     # companies / planned works / clubs / budget
     "rechtsform", "org_type", "beschreibung", "art", "gewerk", "objektart", "sport",
     "bezeichnung",
+    # problems (news-distilled civic deficits)
+    "theme", "district", "affected",
 )
 
 # OpenAI accepts up to 2048 inputs/request; keep batches modest for payload size.
