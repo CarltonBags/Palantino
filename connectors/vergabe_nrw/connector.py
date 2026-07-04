@@ -14,11 +14,13 @@ We FILTER to Dortmund: keep a notice only if the buyer's city is Dortmund.
 
 from __future__ import annotations
 
+import html
 import io
 import re
 import zipfile
+from collections.abc import AsyncGenerator
 from datetime import datetime
-from typing import Any, AsyncGenerator
+from typing import Any
 
 from connectors.base import BaseConnector, ConnectorShape
 from ontology.edges import EdgeBase
@@ -39,7 +41,8 @@ _SUBTYPE = {"16": "works", "17": "services", "18": "supplies"}
 
 def _first(text: str, pattern: str) -> str | None:
     m = re.search(pattern, text, re.S)
-    return m.group(1).strip() if m else None
+    # regex extraction skips XML entity decoding — do it here ("&amp;" → "&")
+    return html.unescape(m.group(1).strip()) if m else None
 
 
 def _parse_date(value: str | None) -> datetime | None:
@@ -54,6 +57,53 @@ def _parse_date(value: str | None) -> datetime | None:
 
 def _buyer_city(xml: str) -> str | None:
     return _first(xml, r"<cbc:CityName[^>]*>(.*?)</cbc:CityName>")
+
+
+def parse_award(xml: str) -> dict[str, Any] | None:
+    """Parse one eForms ContractAwardNotice: tender + the winning companies.
+
+    eForms reference chain: LotResult → LotTender (TEN-…) → TenderingParty
+    (TPA-…) → Tenderer → ORG-… → the Organizations block carries name/address.
+    Kept when the buyer or a winner is in Dortmund."""
+    folder_id = _first(xml, r"<cbc:ContractFolderID[^>]*>(.*?)</cbc:ContractFolderID>")
+    if not folder_id or "Dortmund" not in xml:
+        return None
+
+    orgs: dict[str, dict[str, Any]] = {}
+    for m in re.finditer(r"<efac:Organization>(.*?)</efac:Organization>", xml, re.S):
+        blk = m.group(1)
+        oid = _first(blk, r"<cbc:ID[^>]*>(ORG-\d+)</cbc:ID>")
+        name = _first(blk, r"<cac:PartyName>\s*<cbc:Name[^>]*>(.*?)</cbc:Name>")
+        if oid and name:
+            orgs[oid] = {
+                "name": name,
+                "city": _first(blk, r"<cbc:CityName[^>]*>(.*?)</cbc:CityName>"),
+                "postcode": _first(blk, r"<cbc:PostalZone[^>]*>(.*?)</cbc:PostalZone>"),
+                "street": _first(blk, r"<cbc:StreetName[^>]*>(.*?)</cbc:StreetName>"),
+            }
+    winner_ids = re.findall(r"<efac:Tenderer>\s*<cbc:ID[^>]*>(ORG-\d+)", xml)
+    winners = [orgs[i] for i in dict.fromkeys(winner_ids) if i in orgs]
+    if not winners:
+        return None
+
+    buyer_city = _buyer_city(xml)
+    if "Dortmund" not in (buyer_city or "") and not any(
+        "Dortmund" in (w["city"] or "") for w in winners
+    ):
+        return None
+
+    project = _first(xml, r"<cac:ProcurementProject>(.*?)</cac:ProcurementProject>") or ""
+    amounts = re.findall(r"<cbc:TenderAmount[^>]*>([\d.]+)<", xml)
+    return {
+        "kind": "award",
+        "folder_id": folder_id,
+        "title": _first(project, r"<cbc:Name[^>]*>(.*?)</cbc:Name>") or "Zuschlag",
+        "cpv": _first(project, r"<cbc:ItemClassificationCode[^>]*>(.*?)</cbc:ItemClass"),
+        "buyer_city": buyer_city,
+        "issue_date": _first(xml, r"<cbc:IssueDate[^>]*>(.*?)</cbc:IssueDate>"),
+        "amount_eur": amounts[0] if amounts else None,
+        "winners": winners,
+    }
 
 
 def parse_notice(xml: str) -> dict[str, Any] | None:
@@ -98,7 +148,10 @@ class VergabeNrwConnector(BaseConnector):
                 if not name.lower().endswith(".xml"):
                     continue
                 xml = zf.read(name).decode("utf-8", errors="replace")
-                parsed = parse_notice(xml)
+                if "ContractAwardNotice" in xml:
+                    parsed = parse_award(xml)
+                else:
+                    parsed = parse_notice(xml)
                 if parsed is not None:
                     parsed["_file"] = name
                     yield parsed

@@ -2,7 +2,7 @@
 
 import pytest
 
-from connectors.vergabe_nrw.connector import VergabeNrwConnector, parse_notice
+from connectors.vergabe_nrw.connector import VergabeNrwConnector, parse_award, parse_notice
 from ontology.nodes import Tender
 
 XML_DORTMUND = """<?xml version="1.0"?>
@@ -67,3 +67,58 @@ async def test_emit_no_edges(connector: VergabeNrwConnector) -> None:
     n = connector.normalize(parse_notice(XML_DORTMUND))
     nodes = await connector.emit_entities(n)
     assert await connector.emit_edges(n, nodes) == []
+
+
+# ── Award notices ─────────────────────────────────────────────────────────────
+
+XML_AWARD = """<?xml version="1.0"?>
+<ContractAwardNotice>
+  <cbc:ContractFolderID>award-42</cbc:ContractFolderID>
+  <cbc:IssueDate>2026-06-20+02:00</cbc:IssueDate>
+  <cac:ContractingParty><cac:Party/></cac:ContractingParty>
+  <cbc:CityName>Dortmund</cbc:CityName>
+  <cac:ProcurementProject>
+    <cbc:Name>Estricharbeiten Schulzentrum</cbc:Name>
+    <cbc:ItemClassificationCode>45000000</cbc:ItemClassificationCode>
+  </cac:ProcurementProject>
+  <efac:Organization>
+    <cbc:ID schemeName="organization">ORG-0001</cbc:ID>
+    <cac:PartyName><cbc:Name>Stadt Dortmund</cbc:Name></cac:PartyName>
+    <cbc:CityName>Dortmund</cbc:CityName>
+  </efac:Organization>
+  <efac:Organization>
+    <cbc:ID schemeName="organization">ORG-0002</cbc:ID>
+    <cac:PartyName><cbc:Name>Estrich Meyer GmbH</cbc:Name></cac:PartyName>
+    <cbc:StreetName>Beispielweg 3</cbc:StreetName>
+    <cbc:CityName>Dortmund</cbc:CityName>
+    <cbc:PostalZone>44135</cbc:PostalZone>
+  </efac:Organization>
+  <efac:TenderingParty>
+    <cbc:ID schemeName="tenderingparty">TPA-0001</cbc:ID>
+    <efac:Tenderer>
+      <cbc:ID schemeName="organization">ORG-0002</cbc:ID>
+    </efac:Tenderer>
+  </efac:TenderingParty>
+  <cbc:TenderAmount currencyID="EUR">98500.00</cbc:TenderAmount>
+</ContractAwardNotice>
+"""
+
+
+def test_parse_award_winner() -> None:
+    a = parse_award(XML_AWARD)
+    assert a is not None and a["kind"] == "award"
+    assert a["folder_id"] == "award-42"
+    assert a["title"] == "Estricharbeiten Schulzentrum"
+    assert a["amount_eur"] == "98500.00"
+    assert [w["name"] for w in a["winners"]] == ["Estrich Meyer GmbH"]
+    assert a["winners"][0]["postcode"] == "44135"
+
+
+def test_parse_award_requires_dortmund() -> None:
+    xml = XML_AWARD.replace("Dortmund", "Bochum")
+    assert parse_award(xml) is None
+
+
+def test_parse_award_requires_winner() -> None:
+    xml = XML_AWARD.replace("efac:Tenderer>", "efac:Other>")
+    assert parse_award(xml) is None
