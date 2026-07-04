@@ -442,7 +442,89 @@ async def run_lanuv_air() -> None:
 
 @flow(name="vergabe-nrw", log_prints=True)
 async def run_vergabe_nrw() -> None:
-    await _run_node_connector(VergabeNrwConnector(), get_run_logger())
+    log = get_run_logger()
+    connector = VergabeNrwConnector()
+    run_id = await _start_run(connector.source_name)
+    nodes_written = edges_written = 0
+    try:
+        async with connector:
+            async for raw in connector.fetch():
+                if raw.get("kind") == "award":
+                    n, e = await _ingest_tender_award(connector, raw)
+                    nodes_written += n
+                    edges_written += e
+                    continue
+                normalized = connector.normalize(raw)
+                for node in await connector.emit_entities(normalized):
+                    await upsert_node(node)
+                    nodes_written += 1
+        log.info("vergabe done: %d nodes, %d edges", nodes_written, edges_written)
+        await _finish_run(run_id, connector.source_name, nodes_written, edges_written)
+    except Exception as exc:
+        log.error("vergabe failed: %s", exc, exc_info=True)
+        await _finish_run(run_id, connector.source_name, nodes_written, edges_written, error=str(exc))
+        raise
+
+
+async def _ingest_tender_award(connector: Any, award: dict[str, Any]) -> tuple[int, int]:
+    """Award notice → Tender (updated with the award), winner Organization(s),
+    AWARDED_TO edges. Runs on the writer's RETURNED ids: the winner usually
+    already exists from an earlier award, and an edge built on a fresh UUID
+    would dangle. This is the resolution→tender→company chain from CLAUDE.md."""
+    import hashlib
+    import re as _re
+
+    from ontology.edges import awarded_to
+    from ontology.nodes import Organization, Tender
+
+    source_url = (
+        "https://www.vergabe.metropoleruhr.de/VMPSatellite/"
+        f"notice/{award['folder_id']}"
+    )
+    prov = dict(source=connector.source_name, source_url=source_url)
+    tender_id, _ = await upsert_node(
+        Tender(
+            label=award["title"][:200],
+            source_id=award["folder_id"],
+            properties={
+                "cpv": award.get("cpv"),
+                "buyer_city": award.get("buyer_city"),
+                "awarded": True,
+                "award_date": award.get("issue_date"),
+                "amount_eur": award.get("amount_eur"),
+            },
+            **prov,
+        )
+    )
+    nodes, edges = 1, 0
+    for w in award["winners"]:
+        key = hashlib.sha256(
+            _re.sub(r"\s+", " ", w["name"].lower()).strip().encode()
+        ).hexdigest()[:20]
+        org_id, _ = await upsert_node(
+            Organization(
+                label=w["name"][:200],
+                source_id=key,
+                properties={
+                    "org_type": "company",
+                    "addr_city": w.get("city"),
+                    "addr_postcode": w.get("postcode"),
+                    "addr_street": w.get("street"),
+                },
+                **prov,
+            )
+        )
+        nodes += 1
+        _, was_new = await upsert_edge(
+            awarded_to(
+                tender_id, org_id,
+                source_id=f"{award['folder_id']}->{key}",
+                properties={"amount_eur": award.get("amount_eur")},
+                **prov,
+            )
+        )
+        edges += int(was_new)
+    return nodes, edges
 
 
 @flow(name="ods-demographics", log_prints=True)
@@ -487,7 +569,14 @@ async def run_dortmund_events() -> None:
         vc = await extract_event_venues(limit=300)
         await enrich_actors(limit=300)
         await embed_nodes()
-        log.info("dortmund-events done: %d nodes, %d edges, venues %s", nodes_written, edges_written, vc)
+        # snap events + venue actors to OSM positions — the feed's own geo is
+        # unreliable and each refresh reintroduces the bad coordinates
+        from resolution.geo_correction import snap_event_geoms
+        gc = await snap_event_geoms()
+        log.info(
+            "dortmund-events done: %d nodes, %d edges, venues %s, geo snap %s",
+            nodes_written, edges_written, vc, gc,
+        )
         await _finish_run(run_id, connector.source_name, nodes_written, edges_written)
     except Exception as exc:
         log.error("dortmund-events failed: %s", exc, exc_info=True)
@@ -907,9 +996,21 @@ async def _maintain_actor_layer(limit: int = 400) -> dict[str, int]:
     Used by the backlog flow AND chained after each news ingest."""
     from reasoning.actor_extraction import extract_news_actors
     from reasoning.resource_enrich import enrich_actors
+    from resolution.resolver import EntityResolver
 
     counts = await extract_news_actors(limit=limit)
     counts["tagged"] = await enrich_actors(limit=limit)
+    # resolve fresh actors against register companies / POIs / each other, so a
+    # new extraction can't reintroduce a duplicate identity the graph already has
+    resolved = await EntityResolver().resolve_actors()
+    counts["resolved"] = resolved["exact"] + resolved["fuzzy"]
+    # problem layer: distil civic problems from the same fresh news + retire
+    # problems whose coverage stopped
+    from reasoning.problem_extraction import expire_stale_problems, extract_problems
+
+    pc = await extract_problems(limit=limit)
+    counts["problems"] = pc["problems"]
+    await expire_stale_problems()
     return counts
 
 
@@ -925,6 +1026,24 @@ async def run_actor_extraction() -> None:
     except Exception as exc:
         log.error("actor extraction failed: %s", exc, exc_info=True)
         await _finish_run(run_id, "news_actor_extraction", 0, 0, error=str(exc))
+        raise
+
+
+@flow(name="synergy-candidate-refresh", log_prints=True)
+async def run_candidate_refresh() -> None:
+    """Recompute the all-pairs synergy candidate frontier (cheap signals only,
+    no LLM) — the deep finder and scanner validate from its top."""
+    from reasoning.candidate_engine import refresh_candidates
+
+    log = get_run_logger()
+    run_id = await _start_run("synergy_candidate_refresh")
+    try:
+        counts = await refresh_candidates()
+        log.info("candidate refresh done: %s", counts)
+        await _finish_run(run_id, "synergy_candidate_refresh", counts.get("frontier", 0), 0)
+    except Exception as exc:
+        log.error("candidate refresh failed: %s", exc, exc_info=True)
+        await _finish_run(run_id, "synergy_candidate_refresh", 0, 0, error=str(exc))
         raise
 
 
@@ -1014,4 +1133,6 @@ if __name__ == "__main__":
         # backlog sweep for actors (news ingests also extract on the fly every 6h)
         run_actor_extraction.to_deployment(name="news-actor-extraction-daily", cron="50 7 * * *"),
         run_insight_scan.to_deployment(name="insight-scan-daily", cron="0 8 * * *"),
+        # all-pairs synergy frontier: after embeds/extraction land, before scans
+        run_candidate_refresh.to_deployment(name="synergy-candidates-daily", cron="55 7 * * *"),
     )
