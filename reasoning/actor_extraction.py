@@ -34,18 +34,29 @@ def _actor_key(name: str) -> str:
     return hashlib.sha256(norm.encode()).hexdigest()[:20]
 
 
-def _parse_list(raw: str) -> list[dict[str, Any]]:
+def _parse_list(raw: str) -> list[dict[str, Any]] | None:
+    """None = unparseable (leave pending, retry later); [] = parsed fine, the
+    article genuinely names no extractable actors."""
     text = (raw or "").strip()
     if text.startswith("```"):
         text = text.split("```", 2)[1].lstrip("json").strip()
     start, end = text.find("["), text.rfind("]")
     if start == -1 or end <= start:
-        return []
+        return None
     try:
         data = json.loads(text[start : end + 1])
     except json.JSONDecodeError:
-        return []
+        return None
     return [d for d in data if isinstance(d, dict)]
+
+
+# Operational done-marker: an article with zero extractable actors gets no
+# MENTIONS edge, so the NOT-EXISTS pending filter would re-send it to the LLM on
+# every sweep, forever. The flag is bookkeeping, not a fact.
+_MARK_EXTRACTED = (
+    "UPDATE nodes SET properties = properties || '{\"actors_extracted\": true}'::jsonb "
+    "WHERE id = $1"
+)
 
 
 async def extract_news_actors(limit: int = 200, months: int = 60) -> dict[str, int]:
@@ -62,6 +73,7 @@ async def extract_news_actors(limit: int = 200, months: int = 60) -> dict[str, i
               AND coalesce(properties->>'event_type', '') = 'news'
               AND source = ANY($2::text[])
               AND valid_from >= CURRENT_DATE - make_interval(months => $3)
+              AND NOT (properties ? 'actors_extracted')
               AND NOT EXISTS (
                   SELECT 1 FROM edges e WHERE e.from_node_id = n.id
                     AND e.edge_type = 'MENTIONS' AND e.source = 'news_extraction'
@@ -92,7 +104,10 @@ async def extract_news_actors(limit: int = 200, months: int = 60) -> dict[str, i
         except Exception as exc:
             logger.warning("actor extraction failed for %s: %s", a["id"], exc)
             continue
-        for act in _parse_list(raw):
+        acts = _parse_list(raw)
+        if acts is None:
+            continue
+        for act in acts:
             name = (act.get("name") or "").strip()
             if len(name) < 3:
                 continue
@@ -121,6 +136,8 @@ async def extract_news_actors(limit: int = 200, months: int = 60) -> dict[str, i
             )
             if edge_new:
                 counts["mentions"] += 1
+        async with get_conn() as conn:
+            await conn.execute(_MARK_EXTRACTED, a["id"])
     await embed_nodes()  # final flush: everything extracted is embedded
     logger.info("actor extraction: %s", counts)
     return counts

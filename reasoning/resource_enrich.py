@@ -20,20 +20,31 @@ _INSERT = (
 )
 
 
-def _parse_tags(raw: str) -> tuple[list[str], list[str]]:
+def _parse_tags(raw: str) -> tuple[list[str], list[str]] | None:
+    """None = unparseable (leave pending, retry later); ([], []) = parsed fine,
+    node genuinely has no tags from the vocabulary."""
     text = raw.strip()
     if text.startswith("```"):
         text = text.split("```", 2)[1].lstrip("json").strip()
     start, end = text.find("{"), text.rfind("}")
     if start == -1 or end <= start:
-        return [], []
+        return None
     try:
         data = json.loads(text[start : end + 1])
     except json.JSONDecodeError:
-        return [], []
+        return None
     needs = [t for t in data.get("needs", []) if t in RESOURCES]
     offers = [t for t in data.get("offers", []) if t in RESOURCES]
     return needs, offers
+
+
+# Operational done-marker: a parsed-but-tagless node would otherwise never leave
+# the pending set (NOT EXISTS node_resources) and get re-sent to the LLM on every
+# sweep. The flag is bookkeeping, not a fact — the bitemporal rule is untouched.
+_MARK_TAGGED = (
+    "UPDATE nodes SET properties = properties || '{\"resource_tagged\": true}'::jsonb "
+    "WHERE id = $1"
+)
 
 
 async def enrich_pois() -> int:
@@ -65,6 +76,7 @@ async def enrich_events(limit: int = 200) -> int:
             """
             SELECT id, label, properties FROM nodes n
             WHERE node_type = 'Event' AND valid_to IS NULL AND valid_from >= CURRENT_DATE
+              AND NOT (properties ? 'resource_tagged')
               AND NOT EXISTS (SELECT 1 FROM node_resources nr WHERE nr.node_id = n.id)
             LIMIT $1
             """,
@@ -86,16 +98,20 @@ async def enrich_events(limit: int = 200) -> int:
             description=(props.get("description") or "")[:600],
         )
         try:
-            raw = await complete(RESOURCE_TAG_SYSTEM, prompt, max_tokens=4000)  # main model
+            raw = await complete(RESOURCE_TAG_SYSTEM, prompt, max_tokens=1500, model=fast_model())
         except Exception as exc:
             logger.warning("event tag failed for %s: %s", e["id"], exc)
             continue
-        needs, offers = _parse_tags(raw)
+        parsed = _parse_tags(raw)
+        if parsed is None:
+            continue
+        needs, offers = parsed
         recs = [(e["id"], "need", t) for t in needs] + [(e["id"], "offer", t) for t in offers]
-        if recs:
-            async with get_conn() as c:
+        async with get_conn() as c:
+            if recs:
                 await c.executemany(_INSERT, recs)
-            tagged += 1
+                tagged += 1
+            await c.execute(_MARK_TAGGED, e["id"])
     return tagged
 
 
@@ -107,6 +123,7 @@ async def enrich_actors(limit: int = 400) -> int:
             """
             SELECT id, label, properties FROM nodes n
             WHERE source IN ('news_extraction', 'event_venue') AND valid_to IS NULL
+              AND NOT (properties ? 'resource_tagged')
               AND NOT EXISTS (SELECT 1 FROM node_resources nr WHERE nr.node_id = n.id)
             LIMIT $1
             """,
@@ -125,10 +142,14 @@ async def enrich_actors(limit: int = 400) -> int:
         except Exception as exc:
             logger.warning("actor tag failed for %s: %s", a["id"], exc)
             continue
-        needs, offers = _parse_tags(raw)
+        parsed = _parse_tags(raw)
+        if parsed is None:
+            continue
+        needs, offers = parsed
         recs = [(a["id"], "need", t) for t in needs] + [(a["id"], "offer", t) for t in offers]
-        if recs:
-            async with get_conn() as c:
+        async with get_conn() as c:
+            if recs:
                 await c.executemany(_INSERT, recs)
-            tagged += 1
+                tagged += 1
+            await c.execute(_MARK_TAGGED, a["id"])
     return tagged
