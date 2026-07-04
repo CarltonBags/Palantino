@@ -35,13 +35,16 @@ from reasoning.prompts import (
     format_subgraph,
 )
 
-_LENSES = {"factual", "synergy", "inefficiency", "scandal", "crime", "leads"}
+_LENSES = {
+    "factual", "synergy", "inefficiency", "scandal", "crime", "leads",
+    "bedarf", "problem",
+}
 
 logger = logging.getLogger(__name__)
 
 _VALID_NODE_TYPES = {
     "AgendaItem", "Resolution", "Meeting", "Event", "Tender",
-    "POI", "Organization", "Road", "GeoArea",
+    "POI", "Organization", "Road", "GeoArea", "Problem",
 }
 
 
@@ -79,6 +82,7 @@ async def extract_intent(question: str) -> dict[str, Any]:
     fallback = {
         "lens": "factual", "search_text": question, "node_types": [],
         "category": None, "list": False, "date_from": None, "date_to": None,
+        "needs": [], "district": None,
     }
     try:
         # Use the main model (not the fast one): reliable lens classification +
@@ -97,6 +101,8 @@ async def extract_intent(question: str) -> dict[str, Any]:
     node_types = [t for t in (data.get("node_types") or []) if t in _VALID_NODE_TYPES]
     category = str(data.get("category")).strip() if data.get("category") else None
     lens = str(data.get("lens") or "factual").strip().lower()
+    from reasoning.resources import RESOURCES
+
     return {
         "lens": lens if lens in _LENSES else "factual",
         "search_text": search_text,
@@ -105,6 +111,8 @@ async def extract_intent(question: str) -> dict[str, Any]:
         "list": bool(data.get("list")),
         "date_from": _valid_date(data.get("date_from")),
         "date_to": _valid_date(data.get("date_to")),
+        "needs": [n for n in (data.get("needs") or []) if n in RESOURCES],
+        "district": (str(data.get("district")).strip() if data.get("district") else None),
     }
 
 
@@ -427,6 +435,8 @@ def _intent_out(intent: dict[str, Any]) -> dict[str, Any]:
         "list": bool(intent.get("list")),
         "date_from": intent["date_from"].isoformat() if intent["date_from"] else None,
         "date_to": intent["date_to"].isoformat() if intent["date_to"] else None,
+        "needs": intent.get("needs") or [],
+        "district": intent.get("district"),
     }
 
 
@@ -468,7 +478,8 @@ def _actor_clause(alias: str, business: bool) -> str:
     parts = [
         f"({a}.node_type = 'POI' AND {a}.label NOT LIKE 'OSM %')",
         f"({a}.node_type = 'Event' AND coalesce({a}.properties->>'event_type','') <> 'news')",
-        f"({a}.node_type = 'Organization' AND {a}.source IN ('news_extraction', 'event_venue'))",
+        f"({a}.node_type = 'Organization' AND {a}.source IN "
+        f"('news_extraction', 'event_venue', 'vergabe_nrw_metropole_ruhr'))",
     ]
     if business:
         parts.append(
@@ -512,20 +523,41 @@ async def _deep_synergy_pairs(intent: dict[str, Any]) -> list[tuple[dict, dict, 
                     ORDER BY similarity(lower(n.label), lower($1)) DESC LIMIT 3""",
                 intent["search_text"],
             )
-            # 2) semantic anchors (the theme of the query)
+            # 2) semantic anchors (the theme of the query) — overfetch, then
+            #    dedupe by label so a 31-date event series can't fill every slot
             sem_anchors = await conn.fetch(
                 f"""SELECT {_NODE_COLS}, (n.geom IS NOT NULL) AS has_geom
                     FROM node_embeddings e JOIN nodes n ON n.id = e.node_id
                     WHERE n.valid_to IS NULL AND {actor}
-                    ORDER BY e.embedding <=> $1::vector LIMIT 6""",
+                    ORDER BY e.embedding <=> $1::vector LIMIT 24""",
                 qlit,
             )
             seen_a: set[str] = set()
+            seen_labels: set[str] = set()
             anchors = []
             for r in list(name_anchors) + list(sem_anchors):
-                if str(r["id"]) not in seen_a:
-                    seen_a.add(str(r["id"]))
-                    anchors.append(r)
+                lbl = (r["label"] or "").lower().strip()
+                if str(r["id"]) in seen_a or lbl in seen_labels:
+                    continue
+                seen_a.add(str(r["id"]))
+                seen_labels.add(lbl)
+                anchors.append(r)
+                if len(anchors) >= 9:
+                    break
+            # precomputed frontier partners for all anchors (all-pairs engine):
+            # the best-scored not-yet-validated pairs touching an anchor
+            from reasoning.candidate_engine import frontier_pairs
+
+            frontier_by_anchor: dict[str, list[dict]] = {}
+            for fa, fb, _n in await frontier_pairs(
+                limit=6 * max(len(anchors), 1),
+                anchor_ids=[str(a["id"]) for a in anchors],
+            ):
+                for me, other in ((fa, fb), (fb, fa)):
+                    mid = str(me["id"])
+                    if any(str(a["id"]) == mid for a in anchors):
+                        frontier_by_anchor.setdefault(mid, []).append(other)
+
             for anchor in anchors:
                 aid = str(anchor["id"])
                 # semantic partners: nearest to THIS anchor, different node, not yet connected
@@ -539,7 +571,9 @@ async def _deep_synergy_pairs(intent: dict[str, Any]) -> list[tuple[dict, dict, 
                         LIMIT 6""",
                     aid,
                 )
-                partners = [dict(r) for r in sem]
+                # frontier partners first — they carry the strongest combined signal
+                partners = list(frontier_by_anchor.get(aid, []))
+                partners += [dict(r) for r in sem]
                 # complementary partners: need↔offer match on the resource layer
                 comp = await conn.fetch(
                     f"""SELECT DISTINCT n.id, n.node_type, n.label, n.properties, n.source,
@@ -563,13 +597,19 @@ async def _deep_synergy_pairs(intent: dict[str, Any]) -> list[tuple[dict, dict, 
                 # graph-structural: actors sharing specific neighbours (link prediction)
                 partners += await _link_prediction_partners(conn, [aid], business, cap=4)
                 added = 0
+                added_labels: set[str] = set()
                 for p in partners:
                     pid = str(p["id"])
-                    if (pid == aid or used[pid] >= 2 or added >= 4
+                    # reuse cap by LABEL, not id — an event series is one actor,
+                    # not 31 candidate slots
+                    plabel = (p.get("label") or "").lower().strip()
+                    if (pid == aid or used[plabel] >= 2 or added >= 4
+                            or plabel in added_labels
                             or _same_actor(anchor, p)
                             or pair_key(aid, pid) in suppressed):
                         continue
-                    used[pid] += 1
+                    used[plabel] += 1
+                    added_labels.add(plabel)
                     added += 1
                     note = (
                         f"Beide passen zur Anfrage „{intent['search_text']}“: "
@@ -634,6 +674,382 @@ async def _deep_synergy_answer(intent: dict[str, Any]) -> dict[str, Any]:
     return {"answer": "\n".join(parts), "citations": citations, "intent": _intent_out(intent)}
 
 
+async def _leads_candidates(
+    conn: Any, intent: dict[str, Any], qlit: str, limit: int = 40
+) -> list[dict]:
+    """Akquise candidates: real business actors, district-filtered when the
+    query names one, contactable-first, tender winners boosted, actors the
+    user already acted on (lead_feedback) excluded. Replaces the generic
+    semantic sample for lens=leads."""
+    district_geom_id: str | None = None
+    if intent.get("district"):
+        row = await conn.fetchrow(
+            """
+            SELECT id FROM nodes
+            WHERE node_type = 'GeoArea' AND valid_to IS NULL AND geom IS NOT NULL
+              AND lower(label) = lower($1)
+            ORDER BY (properties->>'area_type' = 'stadtbezirk') DESC
+            LIMIT 1
+            """,
+            intent["district"],
+        )
+        district_geom_id = str(row["id"]) if row else None
+
+    params: list[Any] = [qlit, limit]
+
+    def add(v: Any) -> str:
+        params.append(v)
+        return f"${len(params)}"
+
+    district_clause = "TRUE"
+    if district_geom_id:
+        d = add(district_geom_id)
+        dn = add(intent["district"])
+        district_clause = f"""(
+            (n.geom IS NOT NULL AND ST_Within(n.geom,
+                (SELECT geom FROM nodes WHERE id = {d}::uuid)))
+            OR lower(coalesce(n.properties->>'stadtbezirk', '')) = lower({dn})
+            OR EXISTS (SELECT 1 FROM edges le WHERE le.valid_to IS NULL
+                AND le.edge_type = 'LOCATED_IN' AND le.from_node_id = n.id
+                AND le.to_node_id = {d}::uuid)
+        )"""
+
+    rows = await conn.fetch(
+        f"""
+        SELECT * FROM (
+            SELECT DISTINCT ON (n.label) {_NODE_COLS},
+                (coalesce(n.properties->>'contact_email', n.properties->>'email',
+                          n.properties->>'contact_phone', n.properties->>'phone',
+                          n.properties->>'contact_website', n.properties->>'website')
+                 IS NOT NULL) AS has_contact,
+                (SELECT count(*) FROM edges aw WHERE aw.edge_type = 'AWARDED_TO'
+                    AND aw.to_node_id = n.id AND aw.valid_to IS NULL) AS tender_wins,
+                (e.embedding <=> $1::vector) AS dist
+            FROM nodes n
+            LEFT JOIN node_embeddings e ON e.node_id = n.id
+            WHERE n.valid_to IS NULL
+              AND (
+                (n.node_type = 'POI' AND n.label NOT LIKE 'OSM %'
+                 AND (n.properties->>'shop' IS NOT NULL
+                      OR n.properties->>'office' IS NOT NULL
+                      OR n.properties->>'craft' IS NOT NULL
+                      OR n.properties->>'amenity' IS NOT NULL))
+                OR (n.node_type = 'Organization' AND (
+                     n.source IN ('news_extraction', 'event_venue',
+                                  'vergabe_nrw_metropole_ruhr')
+                     OR (n.source = 'offeneregister'
+                         AND coalesce(n.properties->>'status', '')
+                             = 'currently registered')))
+              )
+              AND {district_clause}
+              AND NOT EXISTS (SELECT 1 FROM lead_feedback lf WHERE lf.node_id = n.id)
+            ORDER BY n.label, (e.embedding <=> $1::vector) ASC NULLS LAST
+        ) x
+        -- blended rank: thematic relevance leads; contact data and proven
+        -- public-tender budgets NUDGE (≈0.06 cosine each), they never override
+        -- relevance — otherwise 40 construction firms bury every Verein on a
+        -- "soziale Einrichtungen" query
+        ORDER BY CASE WHEN x.dist IS NULL THEN 0.95
+                      ELSE x.dist
+                           - (CASE WHEN x.has_contact THEN 0.06 ELSE 0 END)
+                           - (CASE WHEN x.tender_wins > 0 THEN 0.06 ELSE 0 END)
+                 END ASC
+        LIMIT $2
+        """,
+        *params,
+    )
+    out = []
+    for r in rows:
+        d = dict(r)
+        props = d.get("properties") if isinstance(d.get("properties"), dict) else {}
+        if d.get("tender_wins"):
+            # surface the proof-of-budget to the LLM: this actor wins public tenders
+            props = {**props, "oeffentliche_auftraege_gewonnen": d["tender_wins"]}
+        d["properties"] = props
+        for k in ("has_contact", "tender_wins", "dist"):
+            d.pop(k, None)
+        out.append(d)
+    return out
+
+
+def _bedarf_line(n: dict[str, Any]) -> str:
+    """One context line per actor: what the LLM needs to recommend them."""
+    p = n.get("properties") if isinstance(n.get("properties"), dict) else {}
+    bits = [f"{n['label']} ({n['node_type']}"]
+    bits[0] += f", {p['category']})" if p.get("category") else ")"
+    for key, prefix in (
+        ("venue", "Ort: "), ("addr_street", "Adresse: "), ("addr_city", ""),
+        ("contact_email", "Mail: "), ("contact_phone", "Tel: "),
+        ("contact_website", "Web: "), ("role", ""),
+    ):
+        if p.get(key):
+            bits.append(f"{prefix}{str(p[key])[:80]}")
+    if p.get("description"):
+        bits.append(str(p["description"])[:140])
+    if n.get("source_url"):
+        bits.append(f"Quelle: {n['source_url']}")
+    return "- " + " · ".join(bits)
+
+
+async def _offers_for_need(conn: Any, need: str, qlit: str, limit: int = 5) -> list[dict]:
+    """OFFER-side actors for one resource need: series-deduped, preferring
+    non-events, contactable actors, then thematic closeness to the query."""
+    actor = _actor_clause("n", business=True)
+    rows = await conn.fetch(
+        f"""
+        SELECT DISTINCT ON (n.label) {_NODE_COLS}
+        FROM node_resources r
+        JOIN nodes n ON n.id = r.node_id AND n.valid_to IS NULL AND {actor}
+        LEFT JOIN node_embeddings e ON e.node_id = n.id
+        WHERE r.tag = $1 AND r.kind = 'offer'
+        ORDER BY n.label, (n.node_type = 'Event') ASC,
+                 (coalesce(n.properties->>'contact_email',
+                           n.properties->>'contact_website') IS NULL) ASC,
+                 (e.embedding <=> $2::vector) ASC NULLS LAST
+        LIMIT 40
+        """,
+        need, qlit,
+    )
+    # DISTINCT ON needs label-first ordering; re-rank the survivors by the real
+    # preference (non-event, contactable)
+    ranked = sorted(
+        (dict(r) for r in rows),
+        key=lambda x: (
+            x["node_type"] == "Event",
+            not (isinstance(x.get("properties"), dict)
+                 and (x["properties"].get("contact_email")
+                      or x["properties"].get("contact_website"))),
+        ),
+    )
+    return ranked[:limit]
+
+
+async def _bedarf_answer(question: str, intent: dict[str, Any]) -> dict[str, Any]:
+    """'Ich brauche…'-Anfragen: the intent pass decomposed the plan into resource
+    needs; answer with the OFFER side of the resource layer per need (thematically
+    nearest, contactable actors first), plus actors with topic experience."""
+    from reasoning.prompts import BEDARF_PROMPT, BEDARF_SYSTEM
+
+    qvec = (await embed_texts([intent["search_text"]]))[0]
+    qlit = to_pgvector(qvec)
+    actor = _actor_clause("n", business=True)  # who can help = business actors too
+    offers: dict[str, list[dict]] = {}
+    async with get_conn() as conn:
+        async with conn.transaction():
+            await conn.execute("SET LOCAL hnsw.iterative_scan = 'relaxed_order'")
+            for need in intent["needs"][:8]:
+                offers[need] = await _offers_for_need(conn, need, qlit)
+            exp = await conn.fetch(
+                f"""SELECT {_NODE_COLS}
+                    FROM node_embeddings e JOIN nodes n ON n.id = e.node_id
+                    WHERE n.valid_to IS NULL AND {actor}
+                    ORDER BY e.embedding <=> $1::vector LIMIT 6""",
+                qlit,
+            )
+
+    offers_block = "\n".join(
+        f"### Bedarf: {need}\n" + ("\n".join(_bedarf_line(n) for n in rows) or "- (keine Treffer)")
+        for need, rows in offers.items()
+    )
+    experience_block = "\n".join(_bedarf_line(dict(r)) for r in exp) or "- (keine Treffer)"
+
+    answer = await complete(
+        BEDARF_SYSTEM,
+        BEDARF_PROMPT.format(
+            today=date.today().isoformat(), question=question,
+            search_text=intent["search_text"], offers_block=offers_block,
+            experience_block=experience_block,
+        ),
+        # reasoning model: hidden reasoning shares the budget with the visible
+        # answer — a long grouped prompt needs real headroom or content comes
+        # back empty
+        max_tokens=7000,
+    )
+    seen: set[str] = set()
+    citations = []
+    for n in [x for rows in offers.values() for x in rows] + [dict(r) for r in exp]:
+        if str(n["id"]) in seen:
+            continue
+        seen.add(str(n["id"]))
+        citations.append(
+            {"id": str(n["id"]), "label": n["label"], "node_type": n["node_type"],
+             "source": n["source"], "source_url": n["source_url"]}
+        )
+    return {"answer": answer, "citations": citations, "intent": _intent_out(intent)}
+
+
+async def _problem_answer(
+    question: str, intent: dict[str, Any], deep: bool = False
+) -> dict[str, Any]:
+    """'Welche Probleme hat X und wer löst sie': current Problem nodes relevant
+    to the query (semantic + district name match), each with its evidence
+    articles and solver candidates per tagged need. deep=True (Tiefensuche) adds
+    the review pass: candidates researched on their websites, one critical LLM
+    call per problem rejects implausible ones with reasons."""
+    from reasoning.prompts import PROBLEM_ANSWER_PROMPT, PROBLEM_ANSWER_SYSTEM
+
+    qvec = (await embed_texts([intent["search_text"]]))[0]
+    qlit = to_pgvector(qvec)
+    blocks: list[str] = []
+    cited: list[dict] = []
+    total = 0
+    async with get_conn() as conn:
+        async with conn.transaction():
+            await conn.execute("SET LOCAL hnsw.iterative_scan = 'relaxed_order'")
+            total = await conn.fetchval(
+                "SELECT count(*) FROM nodes WHERE node_type = 'Problem' AND valid_to IS NULL"
+            )
+            # district mentions in the query outrank pure embedding distance;
+            # NULLS LAST keeps not-yet-embedded problems reachable
+            ranked = await conn.fetch(
+                f"""
+                SELECT {_NODE_COLS},
+                       (e.embedding <=> $1::vector) AS dist,
+                       (length($2) >= 4 AND lower($2) LIKE
+                        '%' || lower(coalesce(n.properties->>'district', '###')) || '%')
+                       AS district_hit
+                FROM nodes n
+                LEFT JOIN node_embeddings e ON e.node_id = n.id
+                WHERE n.node_type = 'Problem' AND n.valid_to IS NULL
+                ORDER BY (length($2) >= 4 AND lower($2) LIKE
+                          '%' || lower(coalesce(n.properties->>'district', '###')) || '%') DESC,
+                         (e.embedding <=> $1::vector) ASC NULLS LAST
+                LIMIT 4
+                """,
+                qlit, intent["search_text"][:80],
+            )
+            # relevance gate: an off-topic problem is worse than none — better
+            # to say the catalog has nothing for this area/theme yet
+            ranked = [
+                p for p in ranked
+                if p["district_hit"] or (p["dist"] is not None and p["dist"] <= 0.62)
+            ]
+            if deep:
+                ranked = ranked[:2]  # website research is expensive
+            per_problem: list[tuple[str, list[dict]]] = []  # (block, candidates)
+            for p in ranked:
+                pid = str(p["id"])
+                props = p["properties"] if isinstance(p["properties"], dict) else {}
+                cited.append(dict(p))
+                cands: list[dict] = []
+                evidence = await conn.fetch(
+                    """
+                    SELECT a.label, a.source_url, a.valid_from::date AS d
+                    FROM edges e JOIN nodes a ON a.id = e.from_node_id
+                    WHERE e.to_node_id = $1::uuid AND e.edge_type = 'MENTIONS'
+                      AND e.valid_to IS NULL
+                    ORDER BY a.valid_from DESC LIMIT 3
+                    """,
+                    pid,
+                )
+                needs = [
+                    r["tag"] for r in await conn.fetch(
+                        "SELECT tag FROM node_resources WHERE node_id = $1 AND kind = 'need'",
+                        pid,
+                    )
+                ]
+                lines = [
+                    f"## Problem: {p['label']}",
+                    f"Thema: {props.get('theme')} · Stadtteil: {props.get('district') or '—'}"
+                    f" · Betroffene: {props.get('affected') or '—'}"
+                    f" · letzter Beleg: {props.get('last_evidence') or '?'}",
+                    "Belege:",
+                ]
+                lines += [
+                    f"- „{e['label'][:90]}“ ({e['d']}) {e['source_url']}" for e in evidence
+                ]
+                if needs:
+                    lines.append("Lösungs-Kandidaten nach benötigter Ressource:")
+                    for need in needs[:5]:
+                        rows = await _offers_for_need(conn, need, qlit, limit=4)
+                        cited += rows
+                        cands += rows
+                        lines.append(f"### braucht: {need}")
+                        lines += [_bedarf_line(n) for n in rows] or ["- (keine Treffer)"]
+                else:
+                    lines.append(
+                        "Keine Ressourcen-Bedarfe getaggt — nur thematisch passende Akteure:"
+                    )
+                    exp = await conn.fetch(
+                        f"""SELECT {_NODE_COLS}
+                            FROM node_embeddings e JOIN nodes n ON n.id = e.node_id
+                            WHERE n.valid_to IS NULL AND {_actor_clause("n", True)}
+                            ORDER BY e.embedding <=> (
+                                SELECT embedding FROM node_embeddings WHERE node_id = $1::uuid)
+                            LIMIT 4""",
+                        pid,
+                    )
+                    cited += [dict(r) for r in exp]
+                    cands += [dict(r) for r in exp]
+                    lines += [_bedarf_line(dict(n)) for n in exp] or ["- (keine Treffer)"]
+                blocks.append("\n".join(lines))
+                per_problem.append(("\n".join(lines), cands))
+
+    if not blocks:
+        return {
+            "answer": (
+                f"Für diese Frage ist im Problem-Layer noch nichts Passendes erfasst "
+                f"(aktuell {total} destillierte Probleme insgesamt; die Extraktion "
+                f"läuft über den Nachrichtenbestand). Später erneut fragen."
+            ),
+            "citations": [], "intent": _intent_out(intent),
+        }
+    if deep:
+        # the review pass: research each candidate's website + graph context,
+        # then one critical LLM call per problem — implausible candidates are
+        # rejected with a reason, contributions must be evidence-backed
+        import httpx
+
+        from config import settings
+        from reasoning.prompts import PROBLEM_DEEP_PROMPT, PROBLEM_DEEP_SYSTEM
+        from reasoning.synergy_finder import _research_actor
+
+        pieces: list[str] = []
+        async with httpx.AsyncClient(
+            headers={"User-Agent": settings.bot_user_agent}
+        ) as client:
+            for block, cands in per_problem:
+                dossiers = []
+                for c in cands[:6]:
+                    ctx, site, url = await _research_actor(client, c)
+                    dossiers.append(
+                        f"### {c['label']}\n{ctx}\nWebsite ({url or '—'}): "
+                        f"{site or '(keine Website gefunden)'}"
+                    )
+                pieces.append(
+                    await complete(
+                        PROBLEM_DEEP_SYSTEM,
+                        PROBLEM_DEEP_PROMPT.format(
+                            today=date.today().isoformat(),
+                            problem_block=block,
+                            dossiers="\n\n".join(dossiers) or "(keine Kandidaten)",
+                        ),
+                        max_tokens=7000,
+                    )
+                )
+        answer = "\n\n---\n\n".join(pieces)
+    else:
+        answer = await complete(
+            PROBLEM_ANSWER_SYSTEM,
+            PROBLEM_ANSWER_PROMPT.format(
+                today=date.today().isoformat(), question=question,
+                problems_block="\n\n".join(blocks),
+            ),
+            max_tokens=7000,  # reasoning model: headroom, or content comes back empty
+        )
+    seen: set[str] = set()
+    citations = []
+    for n in cited:
+        if str(n["id"]) in seen:
+            continue
+        seen.add(str(n["id"]))
+        citations.append(
+            {"id": str(n["id"]), "label": n["label"], "node_type": n["node_type"],
+             "source": n["source"], "source_url": n["source_url"]}
+        )
+    return {"answer": answer, "citations": citations, "intent": _intent_out(intent)}
+
+
 async def answer_question(
     question: str, k: int = 24, lens_override: str | None = None, retrieval: str = "semantic"
 ) -> dict[str, Any]:
@@ -648,10 +1064,20 @@ async def answer_question(
     intent = await extract_intent(question)
     if lens_override in _LENSES:
         intent["lens"] = lens_override
+    # Problem: which problems does the city/district have, and who could solve
+    # them — problems from the news-distilled problem layer, solvers per need.
+    # Tiefensuche on a problem question = the review pass: candidates researched
+    # on their websites, implausible ones rejected with reasons.
+    if intent["lens"] == "problem":
+        return await _problem_answer(question, intent, deep=(retrieval == "deep"))
     # Tiefensuche: run the research+validate synergy pipeline instead of a single
     # answer (each partner researched in the graph + on their website).
     if retrieval == "deep":
         return await _deep_synergy_answer(intent)
+    # Bedarf: the asker has a plan and wants help — decompose into resource needs
+    # and answer with the offer side of the resource layer, grouped per need.
+    if intent["lens"] == "bedarf" and intent.get("needs"):
+        return await _bedarf_answer(question, intent)
     # Enumeration only makes sense for factual "list all X" queries; analytical
     # lenses always want the focused + graph-expanded subgraph, never a dump.
     list_mode = bool(intent["list"]) and intent["lens"] == "factual"
@@ -725,6 +1151,12 @@ async def answer_question(
                 [pid for pid in partner_ids if pid not in seen],
             ) if partner_ids else []
             nodes = seeds + [dict(r) for r in extra]
+        elif intent["lens"] == "leads":
+            # Akquise: district-aware business-actor retrieval (contact-first,
+            # tender winners boosted, already-worked leads suppressed)
+            async with conn.transaction():
+                await conn.execute("SET LOCAL hnsw.iterative_scan = 'relaxed_order'")
+                nodes = await _leads_candidates(conn, intent, lit)
         elif diversify:
             nodes = await _diverse_seeds(conn, qvec, k_eff, intent)
         else:
