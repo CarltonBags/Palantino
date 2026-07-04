@@ -13,8 +13,13 @@ embeddings, and an LLM (DeepSeek v4-pro by default; OpenAI for embeddings).
 Every chat query starts the same:
 
 1. **Intent extraction** — an LLM reads the query → `{lens, search_text,
-   node_types, category, list, date_from/to}`. Lens ∈ factual / synergy /
-   inefficiency / scandal / crime / leads.
+   node_types, category, list, date_from/to, needs}`. Lens ∈ factual / synergy /
+   inefficiency / scandal / crime / leads / **bedarf**. Bedarf = the asker has a
+   plan and wants help ("ich möchte eine Messe organisieren"): the intent pass
+   decomposes the plan into resource-vocabulary needs, `_bedarf_answer` pulls
+   the OFFER side of `node_resources` per need (contactable, thematically
+   nearest actors first) + topic-experienced actors, and answers as a grouped
+   organizer checklist.
 2. **Embed** `search_text` (OpenAI `text-embedding-3-large`).
 
 Then the **retrieval mode** (toggle: Semantisch / Strukturell / Komplementär /
@@ -113,6 +118,27 @@ fly) and runs a daily backlog sweep.
 
 ---
 
+## 4b. News → problems (the problem layer)
+
+`reasoning/problem_extraction.py`: the same news sweep also distils **Problem**
+nodes — current civic deficits (Leerstand, unsichere Kreuzung, Versorgungslücke)
+with theme/district/affected, `inferred=True`, evidence articles linked
+`MENTIONS`, needs tagged from the resource vocabulary at extraction time.
+`last_evidence` tracks the newest supporting article; `expire_stale_problems`
+closes problems whose coverage stopped (12 months). Chained into
+`_maintain_actor_layer` + the backfill drain. Chat lens **problem** ("welche
+Probleme hat X und wer löst sie") retrieves the nearest problems (relevance
+gate: off-topic problems are dropped rather than padded in) and answers with
+solver candidates per need (bedarf machinery). The fast answer is a CANDIDATE
+list — contributions phrased from documented type/tags only, no invented
+operative plans. **Tiefensuche + problem lens = the review pass**: every
+candidate is researched (graph context + website), one critical LLM call per
+problem rejects implausible ones with reasons (it caught a bike-parking POI
+posing as a hospital) and names the responsible actors missing from the data.
+Lens **bedarf** is the same solver retrieval pointed at the ASKER's own plan.
+
+---
+
 ## 5. Calendar venues → actors
 
 `reasoning/venue_extraction.py`: each calendar event names its `venue`. Distinct
@@ -121,6 +147,13 @@ their events** and contacts carried over; events linked `LOCATED_IN` (batched
 inserts, capped 80/venue). ~163 venues, each hosting many events = active, contactable,
 **geolocated** hub actors — unlike news actors they can also do **proximity**
 synergies. Chained into the events flow (extract + tag + embed on each ingest).
+
+**Geo correction:** the feed's own coordinates are unreliable (latitude right,
+longitude often km east). `resolution/geo_correction.py` `snap_event_geoms()`
+snaps events + venue actors to the matching OSM POI (normalised/fuzzy name →
+cluster → feed-latitude arbitration; original point kept in
+`properties.feed_geo`). Runs after each events ingest — the refresh would
+otherwise reintroduce the bad feed coordinates.
 
 ---
 
@@ -151,6 +184,44 @@ Each insight carries confidence, evidence node ids, scan_id, `inferred=True`.
 - `_deep_synergy_pairs` calls `suppressed_pair_keys()` and **skips rejected/dismissed
   pairs** — so the same rejected candidates stop re-appearing, and confirmed ones
   survive. Cross-surface: dismissing an insight suppresses that pair in chat too.
+- `suppressed_pair_keys()` also includes **SAME_AS pairs** from entity resolution
+  (§7b) — an actor is never proposed as a partner of its own register entry,
+  storefront, or a near-duplicate extraction. `find_synergies` applies the same
+  filter to the scanner's global pairs.
+
+---
+
+## 7b. Actor entity resolution
+
+`resolution/resolver.py` `resolve_actors()`: links extracted actors
+(news_extraction / event_venue) by **legal-form-stripped normalised name** to
+Handelsregister companies, named POIs, and each other (near-duplicate
+extractions). Exact-name Org↔Org → SAME_AS auto-merge (0.96); POI targets are
+always capped below auto-merge (chains) → `resolution_candidates` review queue;
+fuzzy (pg_trgm ≥ 0.75) → queue. Chained into `_maintain_actor_layer`, so each
+news ingest resolves its fresh actors immediately. Done-markers
+(`actors_extracted` / `resource_tagged` on `properties`) keep zero-yield nodes
+from being re-sent to the LLM on every sweep.
+
+---
+
+## 7c. The all-pairs candidate frontier
+
+`reasoning/candidate_engine.py` — "match everyone with everyone", split into a
+cheap half and an expensive half. `refresh_candidates()` (nightly flow, no LLM)
+rebuilds `synergy_actor_set` (extracted actors + registered companies +
+resource-tagged POIs + upcoming events, one row per series label) and computes
+four signals across it **in SQL**: semantic KNN (pgvector, k=12, joins
+`node_embeddings` — never copies vectors: one copy cost 210 MB and tipped the
+DB read-only), IDF-weighted need↔offer complementarity (ubiquitous tags
+skipped), proximity (≤150 m, cross-type, unconnected), and shared non-hub
+neighbours. Combined score per pair → `synergy_candidates`.
+
+Same-entity pairs (SAME_AS / near-identical labels / same venue) are
+`suppressed`; feedback verdicts flip status immediately. The deep finder and
+scanner validate from the top of the `new` frontier (`frontier_pairs()`), so
+LLM coverage of the pair space **accumulates** run over run instead of
+restarting from a handful of per-query anchors.
 
 ---
 
@@ -189,5 +260,6 @@ grounded in real Dortmund Event/POI/Organization nodes by semantic retrieval.
 | Calendar venues → actors | `reasoning/venue_extraction.py` |
 | Insight scanner + expiry/cap | `reasoning/scanner.py` |
 | Tellerrand | `reasoning/tellerrand.py` |
+| Akquise (leads): retrieval + pipeline | `_leads_candidates` in `reasoning/qa.py`, `lead_feedback` (migration 011), `/leads/*` in `api/main.py` |
 | Prompts | `reasoning/prompts.py` |
 | Flows (auto-run + crons) | `ingestion/flows.py` |
