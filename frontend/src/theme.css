@@ -377,3 +377,13 @@ a { color: var(--accent); }
 }
 .mode-toggle button.on { background: var(--accent); color: #241c00; }
 .tag-structural { color: #241c00; background: var(--accent); border-color: var(--accent); }
+
+/* Akquise: lead status actions on citation chips */
+.cite-wrap { display: inline-flex; align-items: center; gap: 2px; }
+.lead-actions { display: inline-flex; gap: 1px; }
+.lead-actions button {
+  border: none; background: transparent; cursor: pointer;
+  font-size: 11px; opacity: 0.55; padding: 1px 3px;
+}
+.lead-actions button:hover { opacity: 1; }
+.lead-actions.done { font-size: 11px; opacity: 0.7; padding: 0 4px; }

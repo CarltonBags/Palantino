@@ -769,3 +769,65 @@ async def ingestion_status() -> list[dict[str, Any]]:
             """
         )
     return [dict(r) for r in rows]
+
+
+# ── Akquise pipeline (lead status memory) ────────────────────────────────────
+
+class LeadStatusRequest(BaseModel):
+    status: str  # contacted | not_interested | customer | ignore
+    note: str | None = None
+
+
+@app.post("/leads/{node_id}/status")
+async def set_lead_status(node_id: UUID, req: LeadStatusRequest) -> dict[str, Any]:
+    """Record what happened with a lead. Any status removes the actor from
+    future generated lead lists; the pipeline view lists them by status."""
+    if req.status not in ("contacted", "not_interested", "customer", "ignore"):
+        raise HTTPException(status_code=422, detail="invalid status")
+    async with get_conn() as conn:
+        exists = await conn.fetchval(
+            "SELECT 1 FROM nodes WHERE id = $1 AND valid_to IS NULL", str(node_id)
+        )
+        if not exists:
+            raise HTTPException(status_code=404, detail="node not found")
+        await conn.execute(
+            """
+            INSERT INTO lead_feedback (node_id, status, note, updated_at)
+            VALUES ($1, $2, $3, now())
+            ON CONFLICT (node_id) DO UPDATE SET
+                status = EXCLUDED.status, note = EXCLUDED.note, updated_at = now()
+            """,
+            str(node_id), req.status, req.note,
+        )
+    return {"node_id": str(node_id), "status": req.status}
+
+
+@app.delete("/leads/{node_id}/status")
+async def clear_lead_status(node_id: UUID) -> dict[str, Any]:
+    """Put an actor back into the lead pool."""
+    async with get_conn() as conn:
+        await conn.execute("DELETE FROM lead_feedback WHERE node_id = $1", str(node_id))
+    return {"node_id": str(node_id), "status": None}
+
+
+@app.get("/leads/pipeline")
+async def leads_pipeline(status: str | None = None) -> list[dict[str, Any]]:
+    """The worked-leads list (the pipeline), newest first."""
+    q = """
+        SELECT lf.node_id, lf.status, lf.note, lf.updated_at,
+               n.label, n.node_type, n.source, n.source_url, n.properties
+        FROM lead_feedback lf JOIN nodes n ON n.id = lf.node_id
+        {where}
+        ORDER BY lf.updated_at DESC
+        LIMIT 200
+    """
+    async with get_conn() as conn:
+        if status:
+            rows = await conn.fetch(q.format(where="WHERE lf.status = $1"), status)
+        else:
+            rows = await conn.fetch(q.format(where=""))
+    return [
+        {**dict(r), "node_id": str(r["node_id"]),
+         "updated_at": r["updated_at"].isoformat()}
+        for r in rows
+    ]

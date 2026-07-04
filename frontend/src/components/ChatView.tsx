@@ -46,8 +46,25 @@ export default function ChatView({
   const [turns, setTurns] = useState<Turn[]>([]);
   const [picker, setPicker] = useState(false);
   const [mode, setMode] = useState(retrieval ?? "semantic");
+  // Akquise: per-node status set in this session (id → status label)
+  const [leadDone, setLeadDone] = useState<Map<string, string>>(new Map());
   const busy = turns.some((t) => t.pending);
   const endRef = useRef<HTMLDivElement>(null);
+
+  const LEAD_LABELS: Record<string, string> = {
+    contacted: "✉ kontaktiert",
+    not_interested: "✕ kein Interesse",
+    customer: "★ Kunde",
+  };
+
+  async function markLead(nodeId: string, status: string) {
+    try {
+      await api.setLeadStatus(nodeId, status);
+      setLeadDone((m) => new Map(m).set(nodeId, LEAD_LABELS[status] ?? status));
+    } catch {
+      /* keep buttons usable on transient failure */
+    }
+  }
 
   useEffect(() => {
     endRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -128,14 +145,25 @@ export default function ChatView({
                     <div className="cites-label">Quellen</div>
                     <div className="cites-row">
                       {t.a.citations.slice(0, 10).map((c) => (
-                        <button
-                          key={c.id}
-                          className="cite-chip"
-                          title={`${c.node_type} · ${c.source}`}
-                          onClick={() => onOpenNode(c.id)}
-                        >
-                          {c.label.length > 38 ? c.label.slice(0, 37) + "…" : c.label}
-                        </button>
+                        <span key={c.id} className="cite-wrap">
+                          <button
+                            className="cite-chip"
+                            title={`${c.node_type} · ${c.source}`}
+                            onClick={() => onOpenNode(c.id)}
+                          >
+                            {c.label.length > 38 ? c.label.slice(0, 37) + "…" : c.label}
+                          </button>
+                          {lens === "leads" && !leadDone.has(c.id) && (
+                            <span className="lead-actions">
+                              <button title="Kontaktiert" onClick={() => markLead(c.id, "contacted")}>✉</button>
+                              <button title="Kein Interesse" onClick={() => markLead(c.id, "not_interested")}>✕</button>
+                              <button title="Kunde geworden" onClick={() => markLead(c.id, "customer")}>★</button>
+                            </span>
+                          )}
+                          {lens === "leads" && leadDone.has(c.id) && (
+                            <span className="lead-actions done">{leadDone.get(c.id)}</span>
+                          )}
+                        </span>
                       ))}
                     </div>
                   </div>

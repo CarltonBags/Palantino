@@ -207,6 +207,11 @@ export const api = {
       ...(lens ? { lens } : {}),
       ...(retrieval ? { retrieval } : {}),
     }),
+  setLeadStatus: (nodeId: string, status: string, note?: string) =>
+    post<{ node_id: string; status: string }>(`/leads/${nodeId}/status`, {
+      status,
+      ...(note ? { note } : {}),
+    }),
   eventCategories: () => get<EventCategory[]>(`/events/categories`),
   events: (opts: { category?: string; q?: string } = {}) => {
     const p = new URLSearchParams();
