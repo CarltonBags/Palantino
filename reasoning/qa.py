@@ -37,7 +37,7 @@ from reasoning.prompts import (
 
 _LENSES = {
     "factual", "synergy", "inefficiency", "scandal", "crime", "leads",
-    "bedarf", "problem",
+    "bedarf", "problem", "foerderung",
 }
 
 logger = logging.getLogger(__name__)
@@ -884,6 +884,77 @@ async def _bedarf_answer(question: str, intent: dict[str, Any]) -> dict[str, Any
     return {"answer": answer, "citations": citations, "intent": _intent_out(intent)}
 
 
+async def _foerderung_answer(question: str, intent: dict[str, Any]) -> dict[str, Any]:
+    """'Welche Förderungen passen zu X': resolve the named actor (name match
+    first, semantic fallback), run the eligibility matcher, present verdicts."""
+    from reasoning.foerderung_match import match_programs
+
+    qvec = (await embed_texts([intent["search_text"]]))[0]
+    qlit = to_pgvector(qvec)
+    actor_clause = _actor_clause("n", business=True)
+    async with get_conn() as conn:
+        actor = await conn.fetchrow(
+            f"""SELECT {_NODE_COLS}, similarity(lower(n.label), lower($1)) AS sim
+                FROM nodes n WHERE n.valid_to IS NULL AND {actor_clause}
+                  AND similarity(lower(n.label), lower($1)) > 0.35
+                ORDER BY sim DESC LIMIT 1""",
+            intent["search_text"],
+        )
+        if not actor:
+            async with conn.transaction():
+                await conn.execute("SET LOCAL hnsw.iterative_scan = 'relaxed_order'")
+                actor = await conn.fetchrow(
+                    f"""SELECT {_NODE_COLS} FROM node_embeddings e
+                        JOIN nodes n ON n.id = e.node_id
+                        WHERE n.valid_to IS NULL AND {actor_clause}
+                        ORDER BY e.embedding <=> $1::vector LIMIT 1""",
+                    qlit,
+                )
+    if not actor:
+        return {"answer": "Dazu wurde kein passender Akteur im Graphen gefunden.",
+                "citations": [], "intent": _intent_out(intent)}
+
+    results = await match_programs(str(actor["id"]))
+    if not results:
+        return {
+            "answer": f"Für **{actor['label']}** wurden im Förderbestand "
+                      "(NRW.BANK, Land + Bund) keine Programme mit passender "
+                      "Zielgruppe gefunden.",
+            "citations": [], "intent": _intent_out(intent),
+        }
+    parts = [f"**Förder-Check für {actor['label']}** — {len(results)} Programme geprüft.\n"]
+    fits = [r for r in results if r["verdict"] == "passt"]
+    maybes = [r for r in results if r["verdict"] == "vielleicht"]
+    rejected = [r for r in results if r["verdict"] == "passt_nicht"]
+    for title, rows in (("Passt", fits), ("Vielleicht — selbst zu prüfen", maybes)):
+        if rows:
+            parts.append(f"## {title}")
+            for r in rows:
+                p = r.get("properties") or {}
+                parts.append(
+                    f"### {r['program']}\n"
+                    f"{p.get('level', '')} · {p.get('funding_type', '')}"
+                    f" · max. {p.get('max_amount_eur') or '—'} €"
+                    f" · Frist: {p.get('deadline') or 'laufend'}\n\n"
+                    f"{r['begruendung']}"
+                    + (f"\n\n**Zu prüfen:** {r['zu_pruefen']}" if r.get("zu_pruefen") else "")
+                    + f"\n\n[Zum Programm]({r['source_url']})"
+                )
+    if rejected:
+        parts.append("---\n### Geprüft und verworfen")
+        parts += [f"- **{r['program']}** — {r['begruendung']}" for r in rejected]
+    citations = [{"id": str(actor["id"]), "label": actor["label"],
+                  "node_type": actor["node_type"], "source": actor["source"],
+                  "source_url": actor["source_url"]}]
+    citations += [
+        {"id": r["program_id"], "label": r["program"], "node_type": "FundingProgram",
+         "source": "nrwbank_foerderung", "source_url": r["source_url"]}
+        for r in results if r["verdict"] != "passt_nicht"
+    ]
+    return {"answer": "\n\n".join(parts), "citations": citations,
+            "intent": _intent_out(intent)}
+
+
 async def _problem_answer(
     question: str, intent: dict[str, Any], deep: bool = False
 ) -> dict[str, Any]:
@@ -1082,6 +1153,10 @@ async def answer_question(
     # and answer with the offer side of the resource layer, grouped per need.
     if intent["lens"] == "bedarf" and intent.get("needs"):
         return await _bedarf_answer(question, intent)
+    # Förderung: which funding programs fit a concrete actor — resolve the actor,
+    # run the eligibility matcher, answer with verdicts + homework.
+    if intent["lens"] == "foerderung":
+        return await _foerderung_answer(question, intent)
     # Enumeration only makes sense for factual "list all X" queries; analytical
     # lenses always want the focused + graph-expanded subgraph, never a dump.
     list_mode = bool(intent["list"]) and intent["lens"] == "factual"

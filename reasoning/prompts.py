@@ -531,7 +531,7 @@ Frage: {question}
 
 Gib NUR dieses JSON zurück:
 {{
-  "lens": "<factual | synergy | inefficiency | scandal | bedarf | problem>",
+  "lens": "<factual | synergy | inefficiency | scandal | bedarf | problem | foerderung>",
   "search_text": "<knappe Suchphrase auf Deutsch, auf die Kernabsicht fokussiert; behalte Eigennamen, Stadtteile und Themen, entferne Füllwörter>",
   "node_types": [<0 oder mehr aus: "AgendaItem","Resolution","Meeting","Event","Tender","POI","Organization","Road","GeoArea">],
   "category": "<Veranstaltungskategorie falls genannt, z.B. "Konzert", "Ausstellung", "Führung", "Wochenmarkt", "Kabarett"; sonst null>",
@@ -557,6 +557,10 @@ Regeln:
   Doppelarbeit/Verschwendung -> "inefficiency"; Auffälligkeiten/Unregelmäßigkeiten/
   Missstände/"Skandale"/Interessenkonflikte -> "scandal"; Kriminalität/Straftaten/
   Diebstähle/Einbrüche/Polizeimeldungen/Sicherheit/Vorfälle-Muster -> "crime".
+- lens = "foerderung", wenn nach FÖRDERUNGEN/Fördermitteln/Zuschüssen/
+  Finanzierungsprogrammen für einen konkreten Akteur oder eine Akteursart
+  gefragt wird ("welche Förderungen passen zu X", "gibt es Zuschüsse für …").
+  search_text = der Akteur bzw. die Akteursbeschreibung.
 - lens = "problem", wenn nach den PROBLEMEN/Missständen der Stadt oder eines
   Stadtteils gefragt wird und/oder wer sie lösen könnte ("welche Probleme hat
   X und wer löst sie", "was fehlt in …", "wer könnte … beheben").
