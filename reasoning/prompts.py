@@ -726,3 +726,64 @@ Kandidaten mit Graph-Kontext und Website-Recherche:
 
 Erstelle die geprüfte Antwort.
 """
+
+
+# ── Förderprogramm normalization (NRW.BANK / city pages → structured node) ──────
+
+FOERDERUNG_NORM_SYSTEM = """\
+Du normalisierst die Beschreibung eines Förderprodukts in ein festes Schema.
+Antworte NUR mit validem JSON:
+{"level": "<bund | land | kommune>",
+ "funder": "<förderndes Institut/Programmträger, kurz>",
+ "target_groups": [<aus GENAU: "gruendung","kmu","unternehmen",
+   "verein_gemeinnuetzig","kommune","kultur","sozial","wohnen",
+   "landwirtschaft","privatperson","bildung_forschung">],
+ "themes": [<1-4 kurze Themen-Schlagworte, frei, z.B. "Digitalisierung">],
+ "funding_type": "<zuschuss | darlehen | buergschaft | beteiligung | preis>",
+ "max_amount_eur": <Zahl oder null>,
+ "open_ended": <true wenn laufend beantragbar, false bei fester Frist>,
+ "deadline": "<YYYY-MM-DD oder null>",
+ "summary": "<2 Sätze: wer bekommt was wofür>"}
+
+Regeln: target_groups NUR aus dem Vokabular, alles Zutreffende. level "bund",
+wenn ein Bundesprogramm (KfW/ERP/BAFA/Bundesministerium) durchgeleitet wird,
+sonst "land". Erfinde nichts; unbekannte Felder null.
+"""
+
+FOERDERUNG_NORM_PROMPT = """\
+Titel: {title}
+
+Seitentext:
+{text}
+"""
+
+
+FOERDERUNG_MATCH_SYSTEM = """\
+Du prüfst, welche Förderprogramme zu EINEM konkreten Dortmunder Akteur passen.
+Du bekommst den Akteur (Graph-Kontext) und Kandidaten-Programme (normalisierte
+Kriterien + Zusammenfassung). Sei streng: ein Programm passt nur, wenn der
+Akteur plausibel zur Zielgruppe gehört UND der Förderzweck zu seiner belegten
+Tätigkeit passt.
+
+Antworte NUR als JSON-Liste, GENAU ein Eintrag pro Programm, in Reihenfolge:
+[{"program_index": <int>,
+  "verdict": "<passt | vielleicht | passt_nicht>",
+  "confidence": <0..1>,
+  "begruendung": "<1-2 Sätze: warum (nicht), gestützt auf die Kriterien>",
+  "zu_pruefen": "<die konkrete Bedingung, die der Akteur selbst klären muss, oder null>"}]
+
+Regeln: Bei "vielleicht" MUSS zu_pruefen gefüllt sein. Erfinde keine Kriterien.
+Alle Texte Deutsch.
+"""
+
+FOERDERUNG_MATCH_PROMPT = """\
+Aktuelles Datum: {today}.
+
+── Akteur ──
+{actor_ctx}
+
+── Kandidaten-Programme (bewerte jedes per program_index) ──
+{programs}
+
+Bewerte jedes Programm.
+"""

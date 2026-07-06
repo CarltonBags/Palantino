@@ -240,6 +240,19 @@ Precision over speed — returns as many *genuine* synergies as exist, not padde
 
 ---
 
+## 8b. Förder-Radar (funding ↔ actor matching)
+
+`FundingProgram` nodes from the NRW.BANK connector (446 products, Land + Bund
+pass-throughs; foerderdatenbank.de is bot-walled → `[Avoid]`). Matching in
+`reasoning/foerderung_match.py`: actor → deterministic target groups →
+programs by group overlap + open deadline + embedding fit → ONE strict
+comparative LLM call → `passt/vielleicht/passt_nicht`, each with reasoning and
+`zu_pruefen` (the condition the actor must verify). Positive verdicts persist
+as `ELIGIBLE_FOR` edges (inferred, confidence). Surface:
+`POST /foerderung/match/{node_id}`.
+
+---
+
 ## 9. Tellerrand (horizon-broadening)
 
 `reasoning/tellerrand.py`: input an interest / Verein / attended event / personality

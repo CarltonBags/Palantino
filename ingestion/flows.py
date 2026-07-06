@@ -1029,6 +1029,32 @@ async def run_actor_extraction() -> None:
         raise
 
 
+@flow(name="nrwbank-foerderung", log_prints=True)
+async def run_nrwbank_foerderung() -> None:
+    """Funding programs (Land NRW + passed-through Bund) → FundingProgram nodes."""
+    from connectors.nrwbank_foerderung.connector import NrwBankFoerderungConnector
+    from embeddings.backfill import embed_nodes
+
+    log = get_run_logger()
+    connector = NrwBankFoerderungConnector()
+    run_id = await _start_run(connector.source_name)
+    nodes_written = 0
+    try:
+        async with connector:
+            async for raw in connector.fetch():
+                normalized = connector.normalize(raw)
+                for node in await connector.emit_entities(normalized):
+                    await upsert_node(node)
+                    nodes_written += 1
+        await embed_nodes()
+        log.info("nrwbank-foerderung done: %d programs", nodes_written)
+        await _finish_run(run_id, connector.source_name, nodes_written, 0)
+    except Exception as exc:
+        log.error("nrwbank-foerderung failed: %s", exc, exc_info=True)
+        await _finish_run(run_id, connector.source_name, nodes_written, 0, error=str(exc))
+        raise
+
+
 @flow(name="synergy-candidate-refresh", log_prints=True)
 async def run_candidate_refresh() -> None:
     """Recompute the all-pairs synergy candidate frontier (cheap signals only,
@@ -1106,6 +1132,7 @@ if __name__ == "__main__":
             name="wahlergebnisse-stimmbezirk-monthly", cron="30 4 4 * *"
         ),
         run_gtfs_static.to_deployment(name="gtfs-static-weekly", cron="0 4 * * 3"),
+        run_nrwbank_foerderung.to_deployment(name="nrwbank-foerderung-weekly", cron="0 5 * * 1"),
         # event_stream / snapshot — daily
         run_oparl.to_deployment(name="oparl-daily", cron="0 6 * * *"),
         run_gremientermine.to_deployment(name="gremientermine-daily", cron="30 6 * * *"),

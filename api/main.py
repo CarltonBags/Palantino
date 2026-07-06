@@ -831,3 +831,20 @@ async def leads_pipeline(status: str | None = None) -> list[dict[str, Any]]:
          "updated_at": r["updated_at"].isoformat()}
         for r in rows
     ]
+
+
+# ── Förder-Radar (funding program matching) ──────────────────────────────────
+
+@app.post("/foerderung/match/{node_id}")
+async def foerderung_match(node_id: UUID) -> list[dict[str, Any]]:
+    """Judge the best-fitting funding programs for one actor. Persists
+    ELIGIBLE_FOR edges for positive verdicts; returns all verdicts."""
+    from reasoning.foerderung_match import match_programs
+
+    results = await match_programs(str(node_id))
+    if not results:
+        raise HTTPException(
+            status_code=404,
+            detail="Kein Akteur gefunden oder keine passenden Programme im Bestand.",
+        )
+    return results
