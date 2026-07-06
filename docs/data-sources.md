@@ -333,3 +333,16 @@ Make geography first-class: the city's district boundaries (Stadtbezirke, statis
 - **Safe by construction** — Lowest-risk sources, in order: (1) open APIs with clear licenses (Open Data Portal, OParl, Bright Sky, Overpass); (2) official public-authority publications (police RSS, city pages) - public-sector info, factual; (3) RSS feeds the publisher deliberately offers (they're inviting machine consumption); (4) politely scraping factual public pages with no opt-out. Build connectors in THAT priority order.
 - **Attribution & licenses** — Honor the license of each source: OSM = ODbL (attribution + share-alike), Open Data Portal = DL-DE-Zero (do anything, attribution appreciated), DWD/Bright Sky = DWD terms (free, attribute). Keep a 'source + license' field on every node/edge - which your CLAUDE.md provenance rule already enforces.
 - **Per-source checklist** — Before each new connector: 1) robots.txt allows it? 2) terms/AGB don't forbid automated use? 3) no login/CAPTCHA/paywall crossed? 4) any personal data minimized + justified? 5) not extracting a 'substantial part' of a protected DB? 6) license recorded? If all clear -> build. If any fails -> manual reference or seek permission/partnership.
+### NRW.BANK Förderprodukte  `[Tier 1]`
+**URL:** https://www.nrwbank.de/de/foerderung/foerderprodukte/  ·  **Access:** Polite crawl via sitemap  ·  **Auth:** None
+~446 funding products (Land NRW + passed-through Bund programs: ERP, BAFA, AFBG).
+robots.txt permits current products (only /programmarchiv/ disallowed); honest UA,
+2 s delay, weekly refresh. Pages are LLM-normalised into FundingProgram nodes
+(level, target groups, funding type, amount, deadline) for funding↔actor matching.
+**Verdict:** the legal backbone of the Förder-Radar.
+
+### Förderdatenbank des Bundes  `[Avoid]`
+**URL:** https://www.foerderdatenbank.de/  ·  **Access:** blocked
+The canonical Bund/Länder directory, but the site sits behind Radware bot
+protection (JS challenge loader) — rule 5 forbids crossing it. Revisit only if an
+official API or open-data dump appears (none on GovData as of 2026-07).
