@@ -39,6 +39,12 @@ async def get_pool() -> asyncpg.Pool:
             # 0 disables the prepared-statement cache — required behind a
             # transaction pooler (Supabase :6543, Neon pooled, PgBouncer).
             statement_cache_size=settings.db_statement_cache_size,
+            # Half-open pooled connections otherwise leave awaits hanging
+            # FOREVER (server shows no query, client waits) — repeatedly
+            # zombified long-running jobs. Every command gets a default
+            # timeout; callers with legitimately longer statements pass an
+            # explicit timeout= per call.
+            command_timeout=600,
         )
         if settings.database_url:
             # Cloud Postgres via a single DSN URL (Supabase / Neon / RDS …).

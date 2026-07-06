@@ -772,6 +772,16 @@ async def _leads_candidates(
     return out
 
 
+async def _complete_nonempty(system: str, prompt: str, max_tokens: int = 20000) -> str:
+    """complete(), retried once with a bigger budget when the reasoning model
+    burns the whole allowance on hidden reasoning and returns empty content."""
+    answer = await complete(system, prompt, max_tokens=max_tokens)
+    if not answer.strip():
+        logger.warning("empty completion (reasoning burn) — retrying with %d", max_tokens * 2)
+        answer = await complete(system, prompt, max_tokens=max_tokens * 2)
+    return answer
+
+
 def _bedarf_line(n: dict[str, Any]) -> str:
     """One context line per actor: what the LLM needs to recommend them."""
     p = n.get("properties") if isinstance(n.get("properties"), dict) else {}
@@ -853,17 +863,13 @@ async def _bedarf_answer(question: str, intent: dict[str, Any]) -> dict[str, Any
     )
     experience_block = "\n".join(_bedarf_line(dict(r)) for r in exp) or "- (keine Treffer)"
 
-    answer = await complete(
+    answer = await _complete_nonempty(
         BEDARF_SYSTEM,
         BEDARF_PROMPT.format(
             today=date.today().isoformat(), question=question,
             search_text=intent["search_text"], offers_block=offers_block,
             experience_block=experience_block,
         ),
-        # reasoning model: hidden reasoning shares the budget with the visible
-        # answer — a long grouped prompt needs real headroom or content comes
-        # back empty
-        max_tokens=7000,
     )
     seen: set[str] = set()
     citations = []
@@ -1017,25 +1023,23 @@ async def _problem_answer(
                         f"{site or '(keine Website gefunden)'}"
                     )
                 pieces.append(
-                    await complete(
+                    await _complete_nonempty(
                         PROBLEM_DEEP_SYSTEM,
                         PROBLEM_DEEP_PROMPT.format(
                             today=date.today().isoformat(),
                             problem_block=block,
                             dossiers="\n\n".join(dossiers) or "(keine Kandidaten)",
                         ),
-                        max_tokens=7000,
                     )
                 )
         answer = "\n\n---\n\n".join(pieces)
     else:
-        answer = await complete(
+        answer = await _complete_nonempty(
             PROBLEM_ANSWER_SYSTEM,
             PROBLEM_ANSWER_PROMPT.format(
                 today=date.today().isoformat(), question=question,
                 problems_block="\n\n".join(blocks),
             ),
-            max_tokens=7000,  # reasoning model: headroom, or content comes back empty
         )
     seen: set[str] = set()
     citations = []
@@ -1203,7 +1207,7 @@ async def answer_question(
     # Reasoning models (e.g. deepseek-v4-pro) spend the budget on hidden
     # reasoning before the answer, so give ample headroom or `content` truncates
     # to empty. 8000 makes that rare; the guard below keeps the UI non-blank.
-    answer = await complete(system, prompt, max_tokens=8000)
+    answer = await _complete_nonempty(system, prompt)
     if not answer.strip():
         answer = "_Die Antwort konnte nicht erzeugt werden — bitte erneut versuchen._"
 
@@ -1275,7 +1279,7 @@ async def analyze_node(node_id: str, lens: str, k: int = 20) -> dict[str, Any]:
     prompt = ANALYSIS_PROMPT.format(
         question=question, subgraph_json=subgraph, today=date.today().isoformat()
     )
-    answer = await complete(ANALYSIS_SYSTEM_PROMPTS[lens], prompt, max_tokens=8000)
+    answer = await _complete_nonempty(ANALYSIS_SYSTEM_PROMPTS[lens], prompt)
     if not answer.strip():
         answer = "_Die Analyse konnte nicht erzeugt werden — bitte erneut versuchen._"
     citations = [
@@ -1327,7 +1331,7 @@ async def discuss(node_ids: list[str], messages: list[dict[str, str]]) -> dict[s
         transcript=transcript,
         today=date.today().isoformat(),
     )
-    answer = await complete(DISCUSS_SYSTEM_PROMPT, prompt, max_tokens=8000)
+    answer = await _complete_nonempty(DISCUSS_SYSTEM_PROMPT, prompt)
     if not answer.strip():
         answer = "_Die Antwort konnte nicht erzeugt werden — bitte erneut versuchen._"
     citations = [
