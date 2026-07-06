@@ -183,6 +183,18 @@ class Problem(NodeBase):
         return {"theme", "district", "affected", "last_evidence"}
 
 
+class FundingProgram(NodeBase):
+    """A public funding program (Förderung) — Bund/Land/Kommune/Stiftung level.
+    The offer side of funding↔actor matching."""
+
+    node_type: str = "FundingProgram"
+
+    @classmethod
+    def fields(cls) -> set[str]:
+        return {"level", "funder", "target_groups", "themes", "funding_type",
+                "max_amount_eur", "deadline", "open_ended", "summary"}
+
+
 class WeatherObservation(NodeBase):
     """Hourly weather reading from Bright Sky / DWD."""
 
@@ -237,6 +249,7 @@ NODE_TYPES: dict[str, type[NodeBase]] = {
     "Tender": Tender,
     "Event": Event,
     "Problem": Problem,
+    "FundingProgram": FundingProgram,
     "WeatherObservation": WeatherObservation,
     "AirQualityObservation": AirQualityObservation,
     "TransitStop": TransitStop,
