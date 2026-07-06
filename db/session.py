@@ -64,7 +64,10 @@ async def get_pool() -> asyncpg.Pool:
 @asynccontextmanager
 async def get_conn() -> AsyncGenerator[asyncpg.Connection, None]:
     pool = await get_pool()
-    async with pool.acquire() as conn:
+    # acquire() is the one await command_timeout does NOT cover — when broken
+    # connections drain the pool, an untimed acquire hangs forever (the last
+    # silent-zombie hole). Better a loud TimeoutError that callers can retry.
+    async with pool.acquire(timeout=30) as conn:
         yield conn
 
 

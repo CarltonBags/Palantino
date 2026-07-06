@@ -244,22 +244,25 @@ async def _run(sql: str, *params: Any, ef_search: int | None = None, attempts: i
     connection loss. A refresh spans hours across dozens of statements — held
     on a single pooled connection, one reset kills the whole run; acquired
     per statement, a reset costs one retry."""
+    async def _once() -> str:
+        async with get_conn() as conn:
+            async with conn.transaction():
+                await conn.execute("SET LOCAL statement_timeout = '1800s'")
+                if ef_search is not None:
+                    await conn.execute(f"SET LOCAL hnsw.ef_search = {ef_search}")
+                    # the KNN filters node_embeddings down to the actor set
+                    # (~18% selectivity) — iterative scan keeps probing until
+                    # the LIMIT is satisfied instead of starving on the filter
+                    await conn.execute("SET LOCAL hnsw.iterative_scan = 'relaxed_order'")
+                return await conn.execute(sql, *params, timeout=600)
+
     for attempt in range(attempts):
         try:
-            async with get_conn() as conn:
-                async with conn.transaction():
-                    await conn.execute("SET LOCAL statement_timeout = '1800s'")
-                    if ef_search is not None:
-                        await conn.execute(f"SET LOCAL hnsw.ef_search = {ef_search}")
-                        # the KNN filters node_embeddings down to the actor set
-                        # (~18% selectivity) — iterative scan keeps probing until
-                        # the LIMIT is satisfied instead of starving on the filter
-                        await conn.execute("SET LOCAL hnsw.iterative_scan = 'relaxed_order'")
-                    # client-side timeout: a half-open pooler connection otherwise
-                    # leaves execute() awaiting a response forever (server shows
-                    # 'idle in transaction / ClientRead' while the client hangs)
-                    return await conn.execute(sql, *params, timeout=600)
-        except _RETRYABLE as exc:
+            # outer watchdog: sockets that die while the machine sleeps have
+            # left awaits hanging PAST every per-command timeout — wait_for is
+            # the belt-and-braces that always fires on wall clock after wake
+            return await asyncio.wait_for(_once(), timeout=1200)
+        except (*_RETRYABLE, asyncio.TimeoutError) as exc:
             if attempt == attempts - 1:
                 raise
             logger.warning("statement lost its connection (%s) — retrying", type(exc).__name__)
@@ -296,11 +299,12 @@ async def refresh_candidates() -> dict[str, Any]:
         chunk = actor_ids[i : i + SEM_BATCH]
         res = await _run(_SEM_PAIRS_BATCH, KNN_PER_ACTOR, SEM_FLOOR, chunk, ef_search=80)
         counts["sem"] += int(res.split()[-1])
-        if (i // SEM_BATCH) % 10 == 0:
-            logger.info(
-                "sem pass: %d/%d actors, %d pairs so far",
-                min(i + SEM_BATCH, len(actor_ids)), len(actor_ids), counts["sem"],
-            )
+        # log EVERY chunk: silence in the log must mean "stuck", not "between
+        # log intervals" — that ambiguity hid three zombie runs
+        logger.info(
+            "sem pass: %d/%d actors, %d pairs so far",
+            min(i + SEM_BATCH, len(actor_ids)), len(actor_ids), counts["sem"],
+        )
     counts["comp"] = int((await _run(_COMP_PAIRS, MAX_TAG_PAIRS)).split()[-1])
     counts["prox"] = int((await _run(_PROX_PAIRS, PROX_M)).split()[-1])
     counts["link"] = int((await _run(_LINK_PAIRS)).split()[-1])
