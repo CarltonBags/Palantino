@@ -37,7 +37,7 @@ from reasoning.prompts import (
 
 _LENSES = {
     "factual", "synergy", "inefficiency", "scandal", "crime", "leads",
-    "bedarf", "problem", "foerderung",
+    "bedarf", "problem", "foerderung", "chance",
 }
 
 logger = logging.getLogger(__name__)
@@ -921,6 +921,79 @@ async def _bedarf_answer(question: str, intent: dict[str, Any]) -> dict[str, Any
     return {"answer": answer, "citations": citations, "intent": _intent_out(intent)}
 
 
+async def _opportunity_answer(question: str, intent: dict[str, Any]) -> dict[str, Any]:
+    """General business-opportunity scan. Combines four grounded signals —
+    per-Stadtbezirk supply gaps (expected-share), vacant storefronts, district
+    demand profiles and news-distilled problems — and lets the model synthesise
+    concrete, evidence-anchored openings. Not scoped to any one sector."""
+    from reasoning.opportunities import commercial_gaps, district_context, vacant_storefronts
+    from reasoning.prompts import OPPORTUNITY_PROMPT, OPPORTUNITY_SYSTEM
+
+    focus = (intent.get("district") or "").strip()
+    qvec = (await embed_texts([intent["search_text"]]))[0]
+    qlit = to_pgvector(qvec)
+
+    async with get_conn() as conn:
+        gaps = await commercial_gaps(conn, limit=40)
+        if focus:  # a named district narrows the scan, but keep a fallback
+            narrowed = [g for g in gaps if g["district"].lower() == focus.lower()]
+            gaps = narrowed or gaps
+        gaps = gaps[:20]
+        vac = await vacant_storefronts(conn)
+        if focus:
+            vac = [v for v in vac if v["district"].lower() == focus.lower()] or vac
+
+        flagged = list(dict.fromkeys([g["district"] for g in gaps] + [v["district"] for v in vac[:4]]))[:6]
+        profiles = {d: await district_context(conn, d) for d in flagged}
+
+        # corroborating demand: problems nearest the query (and, if focused, the district)
+        problems = await conn.fetch(
+            f"""SELECT {_NODE_COLS}, (e.embedding <=> $1::vector) AS dist
+                FROM nodes n LEFT JOIN node_embeddings e ON e.node_id = n.id
+                WHERE n.node_type = 'Problem' AND n.valid_to IS NULL
+                  AND ($2 = '' OR lower(coalesce(n.properties->>'district','')) = lower($2))
+                ORDER BY (e.embedding <=> $1::vector) ASC NULLS LAST LIMIT 6""",
+            qlit, focus,
+        )
+
+        # district nodes for provenance
+        dnodes = await conn.fetch(
+            f"""SELECT {_NODE_COLS} FROM nodes
+                WHERE node_type = 'GeoArea' AND valid_to IS NULL
+                  AND properties->>'area_type' = 'stadtbezirk' AND label = ANY($1::text[])""",
+            flagged,
+        )
+
+    gaps_txt = "\n".join(
+        f"- {g['district']} — {g['cat']}: ist {g['actual']}, erwartet ≈ {g['expected']} "
+        f"(Defizit {g['deficit']})" for g in gaps
+    ) or "(keine ausgeprägten Lücken)"
+    vac_txt = "\n".join(f"- {v['district']}: {v['vacant_units']} freie Ladenlokale" for v in vac[:8]) \
+        or "(keine erfassten Leerstände)"
+    prof_txt = "\n".join(
+        f"- {d}: " + ", ".join(f"{k}={v}" for k, v in prof.items()) for d, prof in profiles.items() if prof
+    ) or "(keine Profildaten)"
+    prob_txt = "\n".join(
+        f"- „{p['label'][:90]}“ ({(p['properties'] or {}).get('district') or '—'} / "
+        f"{(p['properties'] or {}).get('theme') or '—'})"
+        for p in problems if isinstance(p["properties"], dict)
+    ) or "(keine passenden Probleme erfasst)"
+
+    answer = await _complete_nonempty(
+        OPPORTUNITY_SYSTEM,
+        OPPORTUNITY_PROMPT.format(
+            today=date.today().isoformat(), question=question,
+            gaps=gaps_txt, vacancies=vac_txt, profiles=prof_txt, problems=prob_txt,
+        ),
+    )
+    citations = [
+        {"id": str(n["id"]), "label": n["label"], "node_type": n["node_type"],
+         "source": n["source"], "source_url": n["source_url"]}
+        for n in list(dnodes) + list(problems)
+    ]
+    return {"answer": answer, "citations": citations, "intent": _intent_out(intent)}
+
+
 async def _foerderung_answer(question: str, intent: dict[str, Any]) -> dict[str, Any]:
     """'Welche Förderungen passen zu X': resolve the named actor (name match
     first, semantic fallback), run the eligibility matcher, present verdicts."""
@@ -1194,6 +1267,10 @@ async def answer_question(
     # run the eligibility matcher, answer with verdicts + homework.
     if intent["lens"] == "foerderung":
         return await _foerderung_answer(question, intent)
+    # Chance: general business-opportunity scan — spatial supply gaps + vacancies +
+    # district demand profile + open problems, synthesised into concrete openings.
+    if intent["lens"] == "chance":
+        return await _opportunity_answer(question, intent)
     # Enumeration only makes sense for factual "list all X" queries; analytical
     # lenses always want the focused + graph-expanded subgraph, never a dump.
     list_mode = bool(intent["list"]) and intent["lens"] == "factual"

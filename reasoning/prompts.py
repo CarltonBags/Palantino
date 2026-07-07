@@ -531,7 +531,7 @@ Frage: {question}
 
 Gib NUR dieses JSON zurück:
 {{
-  "lens": "<factual | synergy | inefficiency | scandal | bedarf | problem | foerderung>",
+  "lens": "<factual | synergy | inefficiency | scandal | bedarf | problem | foerderung | chance>",
   "search_text": "<knappe Suchphrase auf Deutsch, auf die Kernabsicht fokussiert; behalte Eigennamen, Stadtteile und Themen, entferne Füllwörter>",
   "node_types": [<0 oder mehr aus: "AgendaItem","Resolution","Meeting","Event","Tender","POI","Organization","Road","GeoArea">],
   "category": "<Veranstaltungskategorie falls genannt, z.B. "Konzert", "Ausstellung", "Führung", "Wochenmarkt", "Kabarett"; sonst null>",
@@ -572,6 +572,10 @@ Regeln:
   NUR Begriffe aus dem Vokabular (z.B. eine Messe organisieren ->
   ["veranstaltungsflaeche","technik","verpflegung","sicherheit","erste_hilfe",
   "sponsoring","sichtbarkeit","parkraum"]). search_text = das Vorhaben/Thema.
+- lens = "chance", wenn nach GESCHÄFTSCHANCEN/Marktlücken/Versorgungslücken/
+  Gründungsideen gefragt wird ("wo sind Lücken", "welche Geschäftsidee lohnt sich
+  in …", "was fehlt wirtschaftlich in Dortmund/Stadtteil X", "wo könnte man ein
+  Geschäft eröffnen"). search_text = Thema/Branche falls genannt, sonst allgemein.
 - node_types nur setzen, wenn die Frage klar einen Typ meint:
   Ratsbeschlüsse/Anträge -> ["Resolution","AgendaItem"]; Sitzungen -> ["Meeting"];
   Veranstaltungen/Events/Konzerte/Nachrichten -> ["Event"]; Ausschreibungen -> ["Tender"];
@@ -790,4 +794,50 @@ Aktuelles Datum: {today}.
 {programs}
 
 Bewerte jedes Programm.
+"""
+
+
+OPPORTUNITY_SYSTEM = """\
+Du bist Standort- und Gründungsberater:in für Dortmund. Du bekommst REALE Signale
+aus dem Wissensgraphen: Versorgungslücken je Stadtbezirk (Ist-Zahl der
+Betriebe/Dienste gegen den nach Handelsdichte ERWARTETEN Wert), Leerstände
+(freie Ladenlokale), Stadtteil-Profile (Alter, Minderjährige, Sozialquoten) und
+aus Nachrichten destillierte aktuelle Probleme. Daraus formst du konkrete
+GESCHÄFTSCHANCEN — branchenoffen, nicht auf ein Feld beschränkt.
+
+Regeln:
+- NUR die gelieferten Signale nutzen. Keine Betriebe, Zahlen oder Stadtteile
+  erfinden. Jede Chance MUSS auf ein konkretes Signal zeigen (Stadtbezirk +
+  Kategorie + Defizit, ein Problem, oder Leerstand).
+- Eine Lücke ist eine HYPOTHESE, kein Fakt: die POI-Daten (OpenStreetMap) sind
+  nicht vollständig, "Defizit" heißt relative Unterversorgung, nicht bewiesener
+  Bedarf. Sag das offen. Zahlen als das benennen, was sie sind (OSM-Zählung).
+- Nachfrage plausibel machen: verknüpfe die Lücke mit dem Stadtteil-Profil
+  (z.B. hoher Minderjährigenanteil -> Kinderdienste; hoher Altenanteil ->
+  Gesundheit/Nahversorgung) und passenden Problemen.
+- Pro Chance: **Was** (Betrieb/Dienst), **Wo** (Stadtbezirk), **Warum** (Signal +
+  Nachfrage), **Zu prüfen** (Wettbewerb vor Ort, Miete, OSM-Vollständigkeit,
+  Kaufkraft). 4–7 Chancen, über verschiedene Stadtbezirke und Branchen gestreut.
+- Keine Charakterisierung realer Personen. Deutsch, Markdown, eine Überschrift
+  pro Chance.
+"""
+
+OPPORTUNITY_PROMPT = """\
+Aktuelles Datum: {today}.
+
+Frage: {question}
+
+── Versorgungslücken (Ist vs. erwartet je Stadtbezirk; hohes Defizit = unterversorgt) ──
+{gaps}
+
+── Leerstände (freie Ladenlokale je Stadtbezirk) ──
+{vacancies}
+
+── Stadtteil-Profile (Nachfrageseite) ──
+{profiles}
+
+── Aktuelle Probleme aus dem Nachrichtenbestand ──
+{problems}
+
+Leite daraus konkrete, belegte Geschäftschancen ab.
 """

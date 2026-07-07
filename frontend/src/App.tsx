@@ -27,7 +27,7 @@ export default function App() {
   const [asOf, setAsOf] = useState<string>(""); // "" = current
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [view, setView] = useState<
-    "map" | "chat" | "insights" | "tellerrand" | "history" | "leads" | "foerderung"
+    "map" | "chat" | "insights" | "tellerrand" | "history" | "leads" | "foerderung" | "chance"
   >("map");
 
   // Changing the as-of instant invalidates all cached point layers.
@@ -126,6 +126,12 @@ export default function App() {
         >
           Förderungen
         </button>
+        <button
+          className={view === "chance" ? "active" : ""}
+          onClick={() => setView("chance")}
+        >
+          Chancen
+        </button>
       </div>
 
       {view === "chat" ? (
@@ -163,6 +169,23 @@ export default function App() {
             "Gibt es Zuschüsse für das Kulturzentrum balou?",
             "Welche Programme passen zu einem kleinen Handwerksbetrieb?",
             "Fördermittel für einen gemeinnützigen Sportverein?",
+          ]}
+          showEventPicker={false}
+          onOpenNode={(id) => {
+            setSelectedId(id);
+            setView("map");
+          }}
+        />
+      ) : view === "chance" ? (
+        <ChatView
+          lens="chance"
+          title="Geschäftschancen"
+          subtitle="Wo hat Dortmund Marktlücken? Versorgungslücken je Stadtbezirk (Betriebsdichte), Leerstände, Stadtteil-Profile und aktuelle Probleme — zu konkreten Gründungs- und Geschäftschancen verdichtet. Branchenoffen."
+          examples={[
+            "Wo gibt es in Dortmund Geschäftschancen und Marktlücken?",
+            "Welche Versorgungslücken hat die Nordstadt?",
+            "Wo könnte man ein neues Geschäft eröffnen?",
+            "Welche Gründungsidee lohnt sich in Hörde?",
           ]}
           showEventPicker={false}
           onOpenNode={(id) => {
