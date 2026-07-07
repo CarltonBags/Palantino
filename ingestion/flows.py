@@ -1016,6 +1016,10 @@ async def _maintain_actor_layer(limit: int = 400) -> dict[str, int]:
 
     jc = await extract_journalists()
     counts["journalists"] = jc["journalists"]
+    # deterministic resource tags for the fresh journalists (reach + beat domains)
+    from reasoning.resource_enrich import enrich_journalists
+
+    counts["journalist_tags"] = await enrich_journalists()
     return counts
 
 
