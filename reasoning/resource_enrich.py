@@ -72,7 +72,9 @@ async def enrich_pois() -> int:
 # news beat (category) → domain capability tag a journalist can amplify
 _BEAT_DOMAIN: dict[str, str] = {
     "kultur": "kultur", "kunst": "kultur", "kreativ": "kultur",
-    "sport": "sport", "soziales": "begegnung", "bildung": "bildung",
+    "sport": "sport", "fußball": "sport", "fussball": "sport", "handball": "sport",
+    "eishockey": "sport", "bvb": "sport", "borussia": "sport",
+    "soziales": "begegnung", "bildung": "bildung",
     "umwelt": "umwelt", "klima": "umwelt", "gesundheit": "gesundheit",
     "integration": "integration", "migration": "integration", "flucht": "integration",
     "wirtschaft": "finanzierung",
