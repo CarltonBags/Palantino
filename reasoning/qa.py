@@ -328,24 +328,41 @@ async def _structural_partners(
     return [str(r["pid"]) for r in rows]
 
 
+# tags held by more than this fraction of all actors are near-universal
+# (publikum, sichtbarkeit, veranstaltungsflaeche) — a match on them signals
+# nothing, so they're excluded from complementary matching entirely.
+_COMP_GENERIC_FRAC = 0.40
+
+
 async def _complementary_partners(
     conn: Any, seed_ids: list[str], cap: int = 18, business: bool = False,
 ) -> list[str]:
     """Complementary retrieval: partners whose OFFER matches a seed's NEED (or vice
-    versa) on the resource layer — need↔offer fit, not proximity or similarity."""
+    versa) on the resource layer. Ranked by IDF — a match on a RARE tag (reparatur,
+    kinderbetreuung) weighs far more than one on a near-universal tag (publikum) —
+    so the fit is specific, not the arbitrary shared-tag noise DISTINCT+LIMIT gave."""
     if not seed_ids:
         return []
     rows = await conn.fetch(
         f"""
-        SELECT DISTINCT br.node_id AS pid
-        FROM node_resources ar
-        JOIN node_resources br ON br.tag = ar.tag AND br.kind <> ar.kind
-             AND br.node_id <> ar.node_id
+        WITH tot AS (SELECT count(DISTINCT node_id)::float AS t FROM node_resources),
+        freq AS (SELECT tag, count(DISTINCT node_id) AS n FROM node_resources GROUP BY tag),
+        seed_res AS (
+            SELECT DISTINCT tag, kind FROM node_resources WHERE node_id = ANY($1::uuid[])
+        )
+        SELECT br.node_id AS pid,
+               sum(ln((SELECT t FROM tot) / freq.n)) AS score
+        FROM seed_res sr
+        JOIN freq ON freq.tag = sr.tag
+        JOIN node_resources br ON br.tag = sr.tag AND br.kind <> sr.kind
+             AND br.node_id <> ALL($1::uuid[])
         JOIN nodes n ON n.id = br.node_id AND n.valid_to IS NULL AND {_actor_clause('n', business)}
-        WHERE ar.node_id = ANY($1::uuid[])
+        WHERE freq.n <= (SELECT t FROM tot) * $3
+        GROUP BY br.node_id
+        ORDER BY score DESC
         LIMIT $2
         """,
-        seed_ids, cap,
+        seed_ids, cap, _COMP_GENERIC_FRAC,
     )
     return [str(r["pid"]) for r in rows]
 
@@ -1073,6 +1090,7 @@ async def _problem_answer(
     articles and solver candidates per tagged need. deep=True (Tiefensuche) adds
     the review pass: candidates researched on their websites, one critical LLM
     call per problem rejects implausible ones with reasons."""
+    from reasoning.coalitions import assemble_coalition
     from reasoning.prompts import PROBLEM_ANSWER_PROMPT, PROBLEM_ANSWER_SYSTEM
 
     qvec = (await embed_texts([intent["search_text"]]))[0]
@@ -1146,13 +1164,31 @@ async def _problem_answer(
                     f"- „{e['label'][:90]}“ ({e['d']}) {e['source_url']}" for e in evidence
                 ]
                 if needs:
-                    lines.append("Lösungs-Kandidaten nach benötigter Ressource:")
-                    for need in needs[:5]:
-                        rows = await _offers_for_need(conn, need, qlit, limit=4)
-                        cited += rows
-                        cands += rows
-                        lines.append(f"### braucht: {need}")
-                        lines += [_bedarf_line(n) for n in rows] or ["- (keine Treffer)"]
+                    # problem-anchored coalition: relevance-ranked set-cover of the
+                    # problem's needs by real actors' offers (who together cover it)
+                    co = await assemble_coalition(conn, pid)
+                    if co["members"]:
+                        lines.append(
+                            f"Bedarfe des Problems: {', '.join(co['needs'])}. "
+                            "Mögliche KOALITION (Akteure, die sie GEMEINSAM decken):"
+                        )
+                        for m in co["members"]:
+                            member = {**m, "properties": {}}
+                            cited.append(member)
+                            cands.append(member)
+                            lines.append(
+                                f"- {m['label']} ({m['node_type']}) — deckt: "
+                                f"{', '.join(m['covers'])}"
+                            )
+                        if co["uncovered"]:
+                            lines.append(
+                                f"Nicht durch Akteure gedeckt: {', '.join(co['uncovered'])}"
+                            )
+                    else:
+                        lines.append(
+                            f"Bedarfe: {', '.join(needs)}. Keine hinreichend relevanten "
+                            "Akteure im Graphen, um eine Koalition zu bilden."
+                        )
                 else:
                     lines.append(
                         "Keine Ressourcen-Bedarfe getaggt — nur thematisch passende Akteure:"

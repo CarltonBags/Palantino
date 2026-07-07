@@ -666,12 +666,14 @@ Problem reale Akteure aus dem Graphen, die zur Lösung beitragen könnten
 
 Erstelle eine gegliederte Antwort: pro Problem
 1. das Problem in 1–2 Sätzen, mit Beleg (Quelle/Datum),
-2. mögliche ANSPRECHPARTNER — die 2–4 passendsten Akteure mit Kontakt und dem,
-   was über sie BELEGT ist (Typ, Rolle, getaggte Angebote),
-3. NUR wenn zwei Akteure nachweislich UNTERSCHIEDLICHE getaggte Bedarfe des
-   Problems abdecken: der Hinweis, dass ihre Angebote sich ergänzen könnten,
+2. die mögliche KOALITION — die gelieferten Akteure, die die Bedarfe des Problems
+   GEMEINSAM decken. Sag pro Akteur, WELCHEN Bedarf er abdeckt (Tag) und was über
+   ihn belegt ist (Typ/Rolle/Kontakt). Der Mehrwert liegt in der Kombination:
+   benenne, warum die Akteure ZUSAMMEN mehr abdecken als einzeln.
+3. ein gemeinsamer ERSTER SCHRITT (wer spricht wen an) — knapp, kein Detailplan,
 4. wo passend: ein VERANSTALTUNGSFORMAT, das die Lücke adressieren würde
-   (knapp: Format, Zielgruppe, möglicher Ort aus den Akteuren).
+   (knapp: Format, Zielgruppe, möglicher Ort aus den Akteuren),
+5. offene, NICHT gedeckte Bedarfe ehrlich benennen.
 
 Harte Regeln — das ist eine KANDIDATENLISTE, kein fertiger Lösungsplan:
 - NUR gelieferte Akteure/Fakten verwenden, nichts erfinden.
