@@ -69,6 +69,45 @@ async def enrich_pois() -> int:
     return len(recs)
 
 
+# news beat (category) → domain capability tag a journalist can amplify
+_BEAT_DOMAIN: dict[str, str] = {
+    "kultur": "kultur", "kunst": "kultur", "kreativ": "kultur",
+    "sport": "sport", "soziales": "begegnung", "bildung": "bildung",
+    "umwelt": "umwelt", "klima": "umwelt", "gesundheit": "gesundheit",
+    "integration": "integration", "migration": "integration", "flucht": "integration",
+    "wirtschaft": "finanzierung",
+}
+
+
+async def enrich_journalists() -> int:
+    """Deterministic journalist resources. A journalist's core offer is REACH —
+    they make actors/causes visible — so every one offers `sichtbarkeit`; their
+    beats map to the domains they can amplify. This is what lets a Verein that
+    NEEDS sichtbarkeit form a complementary synergy with a local journalist."""
+    async with get_conn() as c:
+        rows = await c.fetch(
+            "SELECT id, properties FROM nodes WHERE node_type = 'Journalist' AND valid_to IS NULL"
+        )
+        recs: list[tuple] = []
+        for r in rows:
+            props = r["properties"]
+            if isinstance(props, str):
+                try:
+                    props = json.loads(props)
+                except json.JSONDecodeError:
+                    props = {}
+            offers = {"sichtbarkeit"}
+            for beat in (props.get("beats") or []) if isinstance(props, dict) else []:
+                low = str(beat).lower()
+                for key, dom in _BEAT_DOMAIN.items():
+                    if key in low:
+                        offers.add(dom)
+            recs.extend((r["id"], "offer", t) for t in offers if t in RESOURCES)
+        for i in range(0, len(recs), 1000):
+            await c.executemany(_INSERT, recs[i : i + 1000])
+    return len(recs)
+
+
 async def enrich_events(limit: int = 200) -> int:
     """LLM-tag upcoming, not-yet-tagged events with needs/offers."""
     async with get_conn() as c:

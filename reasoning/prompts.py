@@ -485,23 +485,39 @@ Vergleiche die Kandidaten, wähle die besten echten Synergien mit A und bewerte 
 Kandidaten. Antworte als JSON-Liste."""
 
 RESOURCE_TAG_SYSTEM = """\
-Du verschlagwortest eine Veranstaltung mit RESSOURCEN für komplementäre Synergien:
-was die Veranstaltung BRAUCHT (needs) und was sie selbst BIETET (offers).
-Nutze AUSSCHLIESSLICH Tags aus diesem festen Vokabular (sonst kein Join möglich):
-verpflegung, getraenke, uebernachtung, transport, parkraum, publikum,
+Du verschlagwortest einen AKTEUR oder eine Veranstaltung mit RESSOURCEN für
+komplementäre Synergien: was er/sie BRAUCHT (needs) und was er/sie selbst BIETET
+(offers). Nutze AUSSCHLIESSLICH Tags aus diesem festen Vokabular (sonst kein Join):
+
+Logistik: verpflegung, getraenke, uebernachtung, transport, parkraum,
 veranstaltungsflaeche, technik, sponsoring, sanitaer, kinderbetreuung,
-unterhaltung, sichtbarkeit, einzelhandel, reparatur, ziel, sicherheit, erste_hilfe.
-Beispiel: Radtour → needs [verpflegung, getraenke, ziel, reparatur], offers
-[publikum]. Bierfest → needs [transport, parkraum, sanitaer, sicherheit], offers
-[verpflegung, getraenke, ziel, publikum, unterhaltung].
-Wähle nur klar zutreffende Tags (lieber wenige). Antworte NUR mit JSON."""
+unterhaltung, einzelhandel, reparatur, sicherheit, erste_hilfe.
+Fähigkeit/Feld: betreuung, beratung, bildung, gesundheit, integration,
+begegnung, kultur, sport, umwelt, digital, ehrenamt, finanzierung.
+Generisch (SPARSAM, nur wenn zentral): publikum, sichtbarkeit, ziel.
+
+Regeln:
+- Wähle das SPEZIFISCHSTE zutreffende Tag. Bevorzuge Fähigkeit/Feld-Tags, die den
+  Akteur wirklich beschreiben, vor generischen. Lieber 2-4 treffende Tags als viele.
+- publikum/sichtbarkeit/ziel NUR, wenn Reichweite/Sichtbarkeit der KERN ist (z.B.
+  ein Medium/Journalist BIETET sichtbarkeit; ein kleiner Verein BRAUCHT sie).
+- offers = was der Akteur real leisten/bereitstellen kann; needs = was ihm für
+  seine Arbeit fehlt. Nichts erfinden — nur aus dem gelieferten Text ableiten.
+
+Beispiele:
+- Sozialverein für Wohnungslose → offers [betreuung, beratung, begegnung],
+  needs [finanzierung, sichtbarkeit].
+- Stadtteil-Nachrichtenportal → offers [sichtbarkeit, kultur], needs [].
+- Sportverein → offers [sport, veranstaltungsflaeche], needs [sponsoring].
+Antworte NUR mit JSON."""
 
 RESOURCE_TAG_PROMPT = """\
-Veranstaltung: {label}
-Kategorie: {category}
+Akteur/Veranstaltung: {label}
+Kategorie/Typ: {category}
 Beschreibung: {description}
 
-Gib JSON: {{"needs": ["..."], "offers": ["..."]}} — nur Tags aus dem Vokabular.
+Gib JSON: {{"needs": ["..."], "offers": ["..."]}} — nur Tags aus dem Vokabular,
+das spezifischste zuerst.
 """
 
 DISCUSS_PROMPT = """\
