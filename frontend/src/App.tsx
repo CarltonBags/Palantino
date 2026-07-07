@@ -27,7 +27,7 @@ export default function App() {
   const [asOf, setAsOf] = useState<string>(""); // "" = current
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [view, setView] = useState<
-    "map" | "chat" | "insights" | "tellerrand" | "history" | "leads"
+    "map" | "chat" | "insights" | "tellerrand" | "history" | "leads" | "foerderung"
   >("map");
 
   // Changing the as-of instant invalidates all cached point layers.
@@ -120,6 +120,12 @@ export default function App() {
         <button className={view === "leads" ? "active" : ""} onClick={() => setView("leads")}>
           Akquise
         </button>
+        <button
+          className={view === "foerderung" ? "active" : ""}
+          onClick={() => setView("foerderung")}
+        >
+          Förderungen
+        </button>
       </div>
 
       {view === "chat" ? (
@@ -140,6 +146,23 @@ export default function App() {
             "Welche Vereine oder sozialen Einrichtungen wären gute Beratungskund:innen?",
             "Welche Veranstalter mit viel Organisationsaufwand wären Interessenten?",
             "Welche Einrichtungen mit viel manueller Verwaltung gibt es?",
+          ]}
+          showEventPicker={false}
+          onOpenNode={(id) => {
+            setSelectedId(id);
+            setView("map");
+          }}
+        />
+      ) : view === "foerderung" ? (
+        <ChatView
+          lens="foerderung"
+          title="Förder-Radar"
+          subtitle="Prüfe, welche Förderprogramme (Land NRW + Bund, 400+ im Bestand) zu einem konkreten Verein, Unternehmen oder einer Einrichtung passen — mit Begründung und dem, was selbst zu klären ist."
+          examples={[
+            "Welche Förderungen passen zur Auslandsgesellschaft?",
+            "Gibt es Zuschüsse für das Kulturzentrum balou?",
+            "Welche Programme passen zu einem kleinen Handwerksbetrieb?",
+            "Fördermittel für einen gemeinnützigen Sportverein?",
           ]}
           showEventPicker={false}
           onOpenNode={(id) => {
