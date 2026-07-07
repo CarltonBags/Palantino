@@ -1011,6 +1011,11 @@ async def _maintain_actor_layer(limit: int = 400) -> dict[str, int]:
     pc = await extract_problems(limit=limit)
     counts["problems"] = pc["problems"]
     await expire_stale_problems()
+    # journalist layer: aggregate article bylines into Journalist actor nodes
+    from reasoning.journalist_extraction import extract_journalists
+
+    jc = await extract_journalists()
+    counts["journalists"] = jc["journalists"]
     return counts
 
 

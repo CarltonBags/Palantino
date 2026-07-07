@@ -33,6 +33,8 @@ _PROP_KEYS = (
     "theme", "district", "affected",
     # funding programs
     "level", "funder", "target_groups", "themes", "funding_type", "summary",
+    # journalists (byline actors) — beats are what make them findable
+    "outlet", "beats", "role",
 )
 
 # OpenAI accepts up to 2048 inputs/request; keep batches modest for payload size.

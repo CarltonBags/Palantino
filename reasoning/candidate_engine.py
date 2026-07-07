@@ -52,6 +52,9 @@ _FILL_ACTOR_SET = """
             AND coalesce(o.properties->>'status', '') = 'currently registered')
         OR (o.node_type = 'POI' AND o.label NOT LIKE 'OSM %'
             AND EXISTS (SELECT 1 FROM node_resources r WHERE r.node_id = o.id))
+        -- journalists are reach/connector actors: no geom/tags, but their
+        -- WROTE/MENTIONS neighbourhood ties them to the beats they cover
+        OR o.node_type = 'Journalist'
     )
     UNION ALL
     SELECT ev.id, ev.node_type, ev.label, ev.geom
@@ -279,10 +282,12 @@ async def refresh_candidates() -> dict[str, Any]:
     """Rebuild the actor set and recompute all four signals across it."""
     counts: dict[str, Any] = {}
     t0 = time.monotonic()
-    # DELETE, not TRUNCATE: truncate needs an ACCESS EXCLUSIVE lock and a
-    # single abandoned reader (e.g. a killed refresh's zombie transaction)
-    # blocks it until the server reaps the session; row deletes don't
-    await _run("DELETE FROM synergy_actor_set")
+    # TRUNCATE, not DELETE: after repeated wipe-and-refill cycles the row
+    # deletes crawl on dead-tuple bloat (a 17k-row DELETE exceeded a 20-min
+    # watchdog), and an abandoned server-side DELETE then blocks its own
+    # retry. TRUNCATE is instant; its ACCESS EXCLUSIVE lock is safe now that
+    # zombie transactions are prevented by the timeout stack.
+    await _run("TRUNCATE synergy_actor_set")
     await _run(_FILL_ACTOR_SET)
     await _run("ANALYZE synergy_actor_set")
     counts["actors"] = await _fetchval("SELECT count(*) FROM synergy_actor_set")

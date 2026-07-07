@@ -97,6 +97,13 @@ def mentions(event_id: UUID, entity_id: UUID, **kwargs: Any) -> EdgeBase:
                     to_node_id=entity_id, **kwargs)
 
 
+def wrote(journalist_id: UUID, article_id: UUID, **kwargs: Any) -> EdgeBase:
+    """Journalist → Event (news article) they are bylined on. The byline is a
+    source fact (inferred=False), so every edge points at the actual article."""
+    return EdgeBase(edge_type="WROTE", from_node_id=journalist_id,
+                    to_node_id=article_id, **kwargs)
+
+
 def eligible_for(actor_id: UUID, program_id: UUID, **kwargs: Any) -> EdgeBase:
     """Actor → FundingProgram the matcher judged them plausibly eligible for
     (always inferred=True with confidence + reasoning trace)."""
@@ -119,5 +126,5 @@ def same_as(node_a_id: UUID, node_b_id: UUID, method: str, **kwargs: Any) -> Edg
 EDGE_TYPES = {
     "LOCATED_IN", "VOTED_ON", "PASSED_BY", "RELATES_TO",
     "AWARDED_TO", "MEMBER_OF", "PART_OF", "SERVES",
-    "MENTIONS", "SAME_AS", "ELIGIBLE_FOR",
+    "MENTIONS", "SAME_AS", "ELIGIBLE_FOR", "WROTE",
 }
