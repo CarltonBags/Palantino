@@ -2,10 +2,10 @@ import Map, { Layer, Source, type MapLayerMouseEvent } from "react-map-gl/maplib
 import type { FeatureCollection } from "../api";
 import { DORTMUND_CENTER } from "../nodeTypes";
 
-// CARTO positron (light) vector basemap — matches the dortmund.de light theme;
-// free, no API token, real streets/labels
+// CARTO dark-matter vector basemap — matches the dark theme; free, no API
+// token, real streets/labels
 // (the MapLibre demotiles style is country-border polygons only, no city detail).
-const STYLE = "https://basemaps.cartocdn.com/gl/positron-gl-style/style.json";
+const STYLE = "https://basemaps.cartocdn.com/gl/dark-matter-gl-style/style.json";
 
 interface Props {
   points: FeatureCollection; // each feature.properties has color + id + node_type
