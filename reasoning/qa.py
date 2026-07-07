@@ -480,6 +480,8 @@ def _actor_clause(alias: str, business: bool) -> str:
         f"({a}.node_type = 'Event' AND coalesce({a}.properties->>'event_type','') <> 'news')",
         f"({a}.node_type = 'Organization' AND {a}.source IN "
         f"('news_extraction', 'event_venue', 'vergabe_nrw_metropole_ruhr'))",
+        # journalists are reach/connector actors (amplify, cover a beat)
+        f"({a}.node_type = 'Journalist')",
     ]
     if business:
         parts.append(
@@ -487,6 +489,35 @@ def _actor_clause(alias: str, business: bool) -> str:
             f" AND coalesce({a}.properties->>'status','') = 'currently registered')"
         )
     return "(" + " OR ".join(parts) + ")"
+
+
+async def _beat_bridge_partners(conn: Any, anchor: dict, actor_clause: str) -> list[dict]:
+    """Partners for a Journalist (reach) anchor. Their whole-profile embedding
+    clusters with other journalists, so nearest-neighbour finds only peers. Match
+    on their BEATS instead — a sports reporter pairs with the sports clubs,
+    venues and fixtures they could cover or amplify."""
+    props = anchor.get("properties")
+    if isinstance(props, str):
+        try:
+            props = json.loads(props)
+        except json.JSONDecodeError:
+            props = {}
+    if not isinstance(props, dict):
+        return []
+    # beats ONLY — adding role/outlet ("Journalist, Autor…") pulls the vector
+    # back into the journalist cluster and buries the on-beat actors
+    beats = [b for b in (props.get("beats") or []) if isinstance(b, str)]
+    terms = " ".join(beats).strip() or (props.get("role") or "").strip()
+    if not terms:
+        return []
+    vec = to_pgvector((await embed_texts([terms]))[0])
+    rows = await conn.fetch(
+        f"""SELECT {_NODE_COLS} FROM node_embeddings e JOIN nodes n ON n.id = e.node_id
+            WHERE n.valid_to IS NULL AND {actor_clause} AND n.node_type <> 'Journalist'
+            ORDER BY e.embedding <=> $1::vector LIMIT 6""",
+        vec,
+    )
+    return [dict(r) for r in rows]
 
 
 async def _deep_synergy_pairs(intent: dict[str, Any]) -> list[tuple[dict, dict, str]]:
@@ -573,7 +604,13 @@ async def _deep_synergy_pairs(intent: dict[str, Any]) -> list[tuple[dict, dict, 
                 )
                 # frontier partners first — they carry the strongest combined signal
                 partners = list(frontier_by_anchor.get(aid, []))
-                partners += [dict(r) for r in sem]
+                # reach actors (journalists) match on their beats, not their
+                # journalist-clustered profile embedding — and skip the peer
+                # nearest-neighbours (journalist↔journalist is a thin synergy)
+                if anchor["node_type"] == "Journalist":
+                    partners += await _beat_bridge_partners(conn, anchor, actor)
+                else:
+                    partners += [dict(r) for r in sem]
                 # complementary partners: need↔offer match on the resource layer
                 comp = await conn.fetch(
                     f"""SELECT DISTINCT n.id, n.node_type, n.label, n.properties, n.source,
