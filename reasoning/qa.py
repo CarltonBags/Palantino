@@ -1366,10 +1366,31 @@ async def answer_question(
         elif structural or complementary:
             # query-relevant seeds, then their partners: proximity (structural) or
             # need↔offer fit (complementary). The pairs are the signal (no expand).
-            geo_intent = {**intent, "node_types": intent["node_types"] or ["Event", "POI"]}
-            seeds = await _diverse_seeds(conn, qvec, min(k_eff, 14), geo_intent)
-            seed_ids = [str(s["id"]) for s in seeds]
             biz = _is_business_query(intent["search_text"])
+            # a query naming a specific actor must anchor on it — fuzzy label match
+            # first (so "Synergien für Sascha Staat" seeds Sascha, a Journalist),
+            # then the semantic theme. Actor types are included so orgs/journalists
+            # (not just Event/POI) can be seeds.
+            name_seeds = await conn.fetch(
+                f"""SELECT {_NODE_COLS} FROM nodes n WHERE n.valid_to IS NULL
+                    AND {_actor_clause('n', biz)}
+                    AND similarity(lower(n.label), lower($1)) > 0.3
+                    ORDER BY similarity(lower(n.label), lower($1)) DESC LIMIT 3""",
+                intent["search_text"],
+            )
+            geo_intent = {
+                **intent,
+                "node_types": intent["node_types"]
+                or ["Event", "POI", "Organization", "Journalist"],
+            }
+            sem_seeds = await _diverse_seeds(conn, qvec, min(k_eff, 14), geo_intent)
+            seen_seed: set[str] = set()
+            seeds = []
+            for r in list(name_seeds) + list(sem_seeds):
+                if str(r["id"]) not in seen_seed:
+                    seen_seed.add(str(r["id"]))
+                    seeds.append(dict(r))
+            seed_ids = [str(s["id"]) for s in seeds]
             partner_ids = (
                 await _complementary_partners(conn, seed_ids, business=biz) if complementary
                 else await _structural_partners(conn, seed_ids, business=biz)
