@@ -27,7 +27,15 @@ export default function App() {
   const [asOf, setAsOf] = useState<string>(""); // "" = current
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [view, setView] = useState<
-    "map" | "chat" | "insights" | "tellerrand" | "history" | "leads" | "foerderung" | "chance"
+    | "map"
+    | "chat"
+    | "insights"
+    | "tellerrand"
+    | "history"
+    | "leads"
+    | "foerderung"
+    | "chance"
+    | "problem"
   >("map");
 
   // Changing the as-of instant invalidates all cached point layers.
@@ -132,6 +140,12 @@ export default function App() {
         >
           Chancen
         </button>
+        <button
+          className={view === "problem" ? "active" : ""}
+          onClick={() => setView("problem")}
+        >
+          Probleme
+        </button>
       </div>
 
       {view === "chat" ? (
@@ -186,6 +200,24 @@ export default function App() {
             "Welche Versorgungslücken hat die Nordstadt?",
             "Wo könnte man ein neues Geschäft eröffnen?",
             "Welche Gründungsidee lohnt sich in Hörde?",
+          ]}
+          showEventPicker={false}
+          onOpenNode={(id) => {
+            setSelectedId(id);
+            setView("map");
+          }}
+        />
+      ) : view === "problem" ? (
+        <ChatView
+          showModeToggle
+          lens="problem"
+          title="Probleme & Koalitionen"
+          subtitle="Welche Probleme hat ein Stadtteil — und wer könnte sie GEMEINSAM lösen? Aus Nachrichten destillierte Probleme, je Problem eine Koalition aus Akteuren, die die Bedarfe zusammen decken. Mit Tiefensuche werden die Kandidaten auf ihren Websites geprüft und unplausible verworfen."
+          examples={[
+            "Welche Probleme hat die Nordstadt und wer könnte sie lösen?",
+            "Was fehlt in Hörde — und wer könnte es gemeinsam beheben?",
+            "Welche Missstände gibt es in Dortmund?",
+            "Wer könnte die Vereinsamkeit älterer Menschen angehen?",
           ]}
           showEventPicker={false}
           onOpenNode={(id) => {
