@@ -560,6 +560,9 @@ Gib NUR dieses JSON zurück:
     Lütgendortmund, Huckarde, Mengede. Übersetze umgangssprachliche Namen
     (z.B. "Nordstadt" -> "Innenstadt-Nord", "City"/"Innenstadt" ->
     "Innenstadt-West"). Sonst null>",
+  "recent": <true wenn nach den NEUESTEN/aktuellen/jüngsten Ereignissen,
+    Entwicklungen oder Nachrichten gefragt wird OHNE konkretes Datum ("neueste",
+    "aktuelle", "kürzlich", "was tut sich gerade", "diese Woche"); sonst false>,
   "needs": [<nur bei lens "bedarf": benötigte Ressourcen aus GENAU diesem Vokabular:
     "verpflegung","getraenke","uebernachtung","transport","parkraum","publikum",
     "veranstaltungsflaeche","technik","sponsoring","sanitaer","kinderbetreuung",

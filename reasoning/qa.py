@@ -17,7 +17,7 @@ from __future__ import annotations
 import json
 import logging
 import random
-from datetime import date
+from datetime import date, timedelta
 from typing import Any
 
 from db.session import get_conn
@@ -82,7 +82,7 @@ async def extract_intent(question: str) -> dict[str, Any]:
     fallback = {
         "lens": "factual", "search_text": question, "node_types": [],
         "category": None, "list": False, "date_from": None, "date_to": None,
-        "needs": [], "district": None,
+        "needs": [], "district": None, "recent": False,
     }
     try:
         # Use the main model (not the fast one): reliable lens classification +
@@ -113,6 +113,7 @@ async def extract_intent(question: str) -> dict[str, Any]:
         "date_to": _valid_date(data.get("date_to")),
         "needs": [n for n in (data.get("needs") or []) if n in RESOURCES],
         "district": (str(data.get("district")).strip() if data.get("district") else None),
+        "recent": bool(data.get("recent")),
     }
 
 
@@ -140,6 +141,8 @@ async def _retrieve(
     if use_filters and intent["date_to"]:
         # day-inclusive: a date_to of 2026-07-05 must include events all day on the 5th
         filters.append(f"n.valid_from < ({add(intent['date_to'])}::date + INTERVAL '1 day')")
+    if use_filters and intent.get("recent_since"):
+        filters.append(f"n.observed_at >= {add(intent['recent_since'])}::date")
     limit_ph = add(k)
     order = "n.valid_from ASC NULLS LAST" if list_mode else "e.embedding <=> $1::vector"
     sql = f"""
@@ -234,6 +237,8 @@ async def _diverse_seeds(
             filters.append(f"n.valid_from >= {add(intent['date_from'])}")
         if intent.get("date_to"):
             filters.append(f"n.valid_from < ({add(intent['date_to'])}::date + INTERVAL '1 day')")
+        if intent.get("recent_since"):
+            filters.append(f"n.observed_at >= {add(intent['recent_since'])}::date")
     params.append(pool_size)
     # Filtered ANN: without iterative scan, HNSW returns the globally-nearest
     # vectors THEN applies the filter — so a type filter (e.g. POI) can yield ~0
@@ -454,6 +459,7 @@ def _intent_out(intent: dict[str, Any]) -> dict[str, Any]:
         "date_to": intent["date_to"].isoformat() if intent["date_to"] else None,
         "needs": intent.get("needs") or [],
         "district": intent.get("district"),
+        "recent": bool(intent.get("recent")),
     }
 
 
@@ -580,10 +586,24 @@ async def _deep_synergy_pairs(intent: dict[str, Any]) -> list[tuple[dict, dict, 
                     ORDER BY e.embedding <=> $1::vector LIMIT 24""",
                 qlit,
             )
+            # 3) recency anchors: for "neueste/aktuelle Ereignisse" questions, the
+            #    freshest actors (recently INGESTED — observed_at, not an event's
+            #    future valid_from) anchor the search, so synergies follow what was
+            #    just reported, not the farthest-future concert.
+            recent_anchors = []
+            if intent.get("recent_since"):
+                recent_anchors = await conn.fetch(
+                    f"""SELECT {_NODE_COLS}, (n.geom IS NOT NULL) AS has_geom
+                        FROM nodes n
+                        WHERE n.valid_to IS NULL AND {actor}
+                          AND n.observed_at >= $1::date
+                        ORDER BY n.observed_at DESC LIMIT 12""",
+                    intent["recent_since"],
+                )
             seen_a: set[str] = set()
             seen_labels: set[str] = set()
             anchors = []
-            for r in list(name_anchors) + list(sem_anchors):
+            for r in list(name_anchors) + list(recent_anchors) + list(sem_anchors):
                 lbl = (r["label"] or "").lower().strip()
                 if str(r["id"]) in seen_a or lbl in seen_labels:
                     continue
@@ -1285,6 +1305,12 @@ async def answer_question(
     intent = await extract_intent(question)
     if lens_override in _LENSES:
         intent["lens"] = lens_override
+    # "neueste/aktuelle" → a rolling recency window on observed_at (when we
+    # INGESTED the node), not valid_from (an event's future date). This is what
+    # makes "synergies from recent events" follow what was just reported.
+    intent["recent_since"] = (
+        date.today() - timedelta(days=14) if intent.get("recent") else None
+    )
     # Problem: which problems does the city/district have, and who could solve
     # them — problems from the news-distilled problem layer, solvers per need.
     # Tiefensuche on a problem question = the review pass: candidates researched
