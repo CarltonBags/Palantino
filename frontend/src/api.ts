@@ -207,6 +207,23 @@ export const api = {
       ...(lens ? { lens } : {}),
       ...(retrieval ? { retrieval } : {}),
     }),
+  matchFoerderung: (nodeId: string) =>
+    post<
+      Array<{
+        program_id: string;
+        program: string;
+        source_url: string;
+        verdict: string;
+        confidence: number | null;
+        begruendung: string;
+        zu_pruefen: string | null;
+      }>
+    >(`/foerderung/match/${nodeId}`, {}),
+  setLeadStatus: (nodeId: string, status: string, note?: string) =>
+    post<{ node_id: string; status: string }>(`/leads/${nodeId}/status`, {
+      status,
+      ...(note ? { note } : {}),
+    }),
   eventCategories: () => get<EventCategory[]>(`/events/categories`),
   events: (opts: { category?: string; q?: string } = {}) => {
     const p = new URLSearchParams();

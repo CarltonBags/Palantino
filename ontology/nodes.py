@@ -171,6 +171,46 @@ class Event(NodeBase):
                 "attendance_estimate", "tags"}
 
 
+class Problem(NodeBase):
+    """A current civic problem/deficit distilled from news coverage (always
+    inferred=True; evidence articles linked via MENTIONS). The solvable unit
+    the problem→solver retrieval matches actors against."""
+
+    node_type: str = "Problem"
+
+    @classmethod
+    def fields(cls) -> set[str]:
+        return {"theme", "district", "affected", "last_evidence"}
+
+
+class FundingProgram(NodeBase):
+    """A public funding program (Förderung) — Bund/Land/Kommune/Stiftung level.
+    The offer side of funding↔actor matching."""
+
+    node_type: str = "FundingProgram"
+
+    @classmethod
+    def fields(cls) -> set[str]:
+        return {"level", "funder", "target_groups", "themes", "funding_type",
+                "max_amount_eur", "deadline", "open_ended", "summary"}
+
+
+class Journalist(NodeBase):
+    """A local journalist / recurring contributor, identified by their public
+    byline in a news outlet (never a private individual — a byline is a public
+    professional identity). Facts only: which outlet they write for and how much,
+    grounded in their published articles via WROTE edges. No characterization of
+    the person — same guardrail as Person, kept as a distinct type because a
+    journalist is not a public official."""
+
+    node_type: str = "Journalist"
+
+    @classmethod
+    def fields(cls) -> set[str]:
+        return {"outlet", "byline", "role", "article_count", "beats", "first_seen",
+                "last_seen"}
+
+
 class WeatherObservation(NodeBase):
     """Hourly weather reading from Bright Sky / DWD."""
 
@@ -224,6 +264,9 @@ NODE_TYPES: dict[str, type[NodeBase]] = {
     "ConstructionSite": ConstructionSite,
     "Tender": Tender,
     "Event": Event,
+    "Problem": Problem,
+    "FundingProgram": FundingProgram,
+    "Journalist": Journalist,
     "WeatherObservation": WeatherObservation,
     "AirQualityObservation": AirQualityObservation,
     "TransitStop": TransitStop,

@@ -26,6 +26,24 @@ logger = logging.getLogger(__name__)
 AUTO_MERGE_THRESHOLD = 0.95
 CANDIDATE_THRESHOLD = 0.70
 
+# Rechtsform suffixes stripped before name comparison, so the legal name
+# ("Rewe Markt GmbH") matches the trade/news name ("Rewe").
+_LEGAL_FORM_RE = (
+    r"\s+(gGmbH|GmbH & Co\. KG|GmbH|UG.*|Aktiengesellschaft|AG"
+    r"|mbH|e\.?\s?V\.?|KGaA|KG|OHG|GbR|SE|Stiftung|Verein).*$"
+)
+
+def norm_name_sql(expr: str) -> str:
+    """SQL for the normalised comparison name of `expr`: legal form stripped,
+    lower-cased, whitespace collapsed, edge punctuation trimmed."""
+    return (
+        "lower(trim(both ' .,-–„“\"' FROM regexp_replace("
+        "regexp_replace({expr}, '{legal}', '', 'i'), '\\s+', ' ', 'g')))"
+    ).format(expr=expr, legal=_LEGAL_FORM_RE.replace("'", "''"))
+
+
+_NORM_LABEL_SQL = norm_name_sql("label")
+
 
 @dataclass
 class ResolutionCandidate:
@@ -45,6 +63,114 @@ class EntityResolver:
         await self.resolve_by_geo_proximity()
         await self.resolve_by_name_fuzzy()
         await self.resolve_company_to_storefront()
+        await self.resolve_actors()
+
+    async def resolve_actors(
+        self, fuzzy_threshold: float = 0.75, limit: int = 3000,
+    ) -> dict[str, int]:
+        """
+        Link LLM-extracted actors (source news_extraction / event_venue) to their
+        canonical counterparts: Handelsregister companies, named OSM POIs, and
+        each other (near-duplicate extractions the exact-key dedupe missed).
+        Comparison is on the legal-form-stripped, normalised name.
+
+        Confidence policy:
+          - exact normalised name, Organization↔Organization → 0.96 (auto-merge);
+          - any POI target is capped below auto-merge (chains: one name, many
+            storefronts) → review queue;
+          - fuzzy (pg_trgm on normalised names) → similarity as confidence,
+            review queue via the standard thresholds.
+        """
+        counts = {"exact": 0, "fuzzy": 0}
+        actors_cte = f"""
+            actors AS (
+                SELECT id, source, {_NORM_LABEL_SQL} AS nname
+                FROM nodes
+                WHERE node_type = 'Organization' AND valid_to IS NULL
+                  AND source IN ('news_extraction', 'event_venue',
+                                 'vergabe_nrw_metropole_ruhr')
+            ),
+            targets AS (
+                SELECT id, source, node_type, {_NORM_LABEL_SQL} AS nname
+                FROM nodes
+                WHERE valid_to IS NULL AND (
+                    (node_type = 'Organization'
+                     AND source IN ('offeneregister', 'news_extraction', 'event_venue'))
+                    OR (node_type = 'POI' AND label NOT LIKE 'OSM %'))
+            )
+        """
+        not_seen = """
+            NOT EXISTS (
+                SELECT 1 FROM resolution_candidates rc
+                WHERE (rc.node_a_id = a.id AND rc.node_b_id = t.id)
+                   OR (rc.node_a_id = t.id AND rc.node_b_id = a.id))
+            AND NOT EXISTS (
+                SELECT 1 FROM edges e
+                WHERE e.edge_type = 'SAME_AS' AND e.valid_to IS NULL
+                  AND ((e.from_node_id = a.id AND e.to_node_id = t.id)
+                    OR (e.from_node_id = t.id AND e.to_node_id = a.id)))
+        """
+        # Actor↔actor pairs appear on both sides — a.id < t.id dedupes them;
+        # register/POI targets only ever appear on the target side.
+        no_mirror = """
+            (t.node_type = 'POI' OR t.source = 'offeneregister' OR a.id < t.id)
+        """
+        async with get_conn() as conn:
+            exact = await conn.fetch(
+                f"""
+                WITH {actors_cte}
+                SELECT a.id AS a_id, t.id AS b_id, t.node_type AS t_type
+                FROM actors a
+                JOIN targets t ON t.nname = a.nname AND t.id <> a.id
+                WHERE length(a.nname) >= 4 AND {no_mirror} AND {not_seen}
+                LIMIT $1
+                """,
+                limit,
+            )
+            fuzzy = await conn.fetch(
+                f"""
+                WITH {actors_cte}
+                SELECT a.id AS a_id, t.id AS b_id, t.node_type AS t_type,
+                       similarity(a.nname, t.nname) AS sim
+                FROM actors a
+                JOIN targets t ON t.id <> a.id
+                    AND left(t.nname, 1) = left(a.nname, 1)
+                    AND t.nname <> a.nname
+                    AND similarity(a.nname, t.nname) >= $1
+                WHERE length(a.nname) >= 5 AND {no_mirror} AND {not_seen}
+                ORDER BY sim DESC
+                LIMIT $2
+                """,
+                fuzzy_threshold, limit,
+            )
+        for row in exact:
+            confidence = 0.96
+            if row["t_type"] == "POI":
+                confidence = AUTO_MERGE_THRESHOLD - 0.01
+            counts["exact"] += 1
+            await self._handle_candidate(
+                ResolutionCandidate(
+                    node_a_id=UUID(str(row["a_id"])),
+                    node_b_id=UUID(str(row["b_id"])),
+                    method="actor_name_exact",
+                    confidence=round(confidence, 3),
+                )
+            )
+        for row in fuzzy:
+            confidence = float(row["sim"])
+            if row["t_type"] == "POI":
+                confidence = min(confidence, AUTO_MERGE_THRESHOLD - 0.01)
+            counts["fuzzy"] += 1
+            await self._handle_candidate(
+                ResolutionCandidate(
+                    node_a_id=UUID(str(row["a_id"])),
+                    node_b_id=UUID(str(row["b_id"])),
+                    method="actor_name_fuzzy",
+                    confidence=round(confidence, 3),
+                )
+            )
+        logger.info("actor resolution: %s", counts)
+        return counts
 
     async def resolve_company_to_storefront(
         self, name_threshold: float = 0.4, limit: int = 4000,

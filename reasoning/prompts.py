@@ -200,16 +200,47 @@ ein Ort als Stadtbezirk UND statistischer Bezirk) — das sind keine Ineffizienz
     "synergy": _ANALYSIS_BASE + """
 
 Aufgabe: Finde UNGENUTZTE SYNERGIEN — noch nicht verbundene Gelegenheiten, bei
-denen zwei Vorgänge/Akteure sich gegenseitig verstärken könnten, wenn jemand sie
+denen zwei Akteure sich gegenseitig verstärken könnten, wenn jemand sie
 koordinierte. Nur ECHTES, zeitlich aktuelles Potenzial (keine bereits realisierten
-Verbindungen, keine Jahre alten, abgeschlossenen Vorgänge). Bündle keine Events
-desselben kommerziellen Veranstaltungsorts miteinander. Begründe je Gelegenheit
-den Mechanismus und was zur Umsetzung nötig wäre.
-- ANSPRECHPARTNER: Wenn zu den beteiligten Akteuren in den Fakten Kontaktdaten
-  vorliegen (Eigenschaften contact_email / contact_phone / contact_website / email
-  / phone / website), nenne sie je Akteur als konkrete Kontaktmöglichkeit, um die
-  Synergie vorzuschlagen. Erfinde KEINE Kontaktdaten; nenne nur die, die in den
-  Fakten stehen, und nur geschäftliche/institutionelle Kontakte.""",
+Verbindungen, keine Jahre alten/abgeschlossenen Vorgänge). Bündle keine Events
+desselben Veranstaltungsorts und nicht denselben Akteur mit sich selbst.
+PRÜFE JEDE Synergie kritisch (Zielgruppe/Anlass-Test): Würde DASSELBE Publikum
+plausibel beide Angebote nutzen? Wenn nein → NICHT nennen. Lieber eine echte
+Synergie als fünf erzwungene. Erfinde nichts.
+
+KALIBRIERUNG — was ein Ablehnungsgrund ist und was NICHT:
+- POTENZIAL heißt: die Verbindung existiert noch nicht. Fehlende
+  Absichtserklärungen, fehlende bestehende Kontakte, "kein Hinweis auf geplante
+  Zusammenarbeit" sind NIEMALS Ablehnungsgründe — sie sind die VORAUSSETZUNG
+  jeder ungenutzten Synergie. Verwirf nur, wenn der MECHANISMUS unplausibel ist
+  (Zielgruppen wirklich disjunkt, Zeitfenster vorbei, kein denkbarer
+  beidseitiger Nutzen).
+- Der Zielgruppen-Test fragt nach PLAUSIBILITÄT ("könnte dasselbe Publikum
+  beides nutzen?"), nicht nach BELEG einer schon bestehenden Überschneidung.
+- "Zeitlich aktuell" bezieht sich auf die GELEGENHEIT (Partner-Event steht
+  bevor, Vorhaben läuft) — NICHT auf das Alter der Belege über den Kernakteur:
+  die Mission eines Vereins/einer Stiftung veraltet nicht mit dem Artikeldatum.
+  Leite das Profil des Kernakteurs aus Rolle/Beschreibung/älteren Belegen ab.
+- Wenn nach diesem Maßstab trotzdem nichts trägt, sage das — aber nenne dann
+  die 1–2 nächstliegenden PRÜFENSWERTEN Möglichkeiten, klar als Hypothese
+  markiert ("wäre zu prüfen: …"), statt nur Absagen zu begründen.
+
+FESTES AUSGABEFORMAT — je Synergie GENAU diese Struktur, ausführlich:
+
+## <Kurztitel der Synergie>
+*Akteur A ↔ Akteur B*
+- **Akteur A:** wer/was, für wen (1–2 Sätze).
+- **Akteur B:** wer/was, für wen (1–2 Sätze).
+- **Gemeinsame Zielgruppe / Anlass:** das konkrete geteilte Publikum bzw. der Anlass.
+- **Warum es funktioniert:** ausführliche Begründung (mindestens 3–4 Sätze) — warum
+  die Zielgruppen/Anlässe zusammenpassen UND was JEDE Seite gewinnt (beidseitiger
+  Nutzen, nicht nur einseitig).
+- **Wie es abläuft:** konkreter Ablauf der Zusammenarbeit (mindestens 3–4 Sätze) —
+  wer macht was, wie greifen die Angebote praktisch ineinander.
+- **Synergie-Potenzial:** der konkrete Mehrwert/Effekt.
+- **Erster Schritt:** eine konkrete, sofort umsetzbare erste Handlung.
+- **Kontakt:** NUR belegte Kontaktdaten aus den Fakten (contact_email/-phone/
+  -website / email / phone / website), sonst diese Zeile weglassen. Erfinde nichts.""",
     "scandal": _ANALYSIS_BASE + """
 
 Aufgabe: DECKE NICHT-OFFENSICHTLICHE, potenzielle Auffälligkeiten auf, die eine
@@ -312,7 +343,11 @@ Der ENTSCHEIDENDE Test — ZIELGRUPPE & ANLASS:
 
 Weitere Reject-Gründe: ein Akteur inaktiv/geschlossen/kein echter Betrieb; Website
 passt nicht zum Akteur; ein Event ist bereits vorbei; die Akteure sind ohnehin
-schon verbunden; kein echter, umsetzbarer Mehrwert. Im Zweifel: reject.
+schon verbunden; kein echter, umsetzbarer Mehrwert. VERWIRF insbesondere, wenn
+beide Akteure DERSELBE sind bzw. zur selben Serie/zum selben Träger/Veranstalter
+gehören (z.B. Erwachsenen- und Kinder-Variante desselben Clubs, oder zwei Formate
+am selben Ort desselben Anbieters) — das ist keine Synergie, sondern ein Angebot.
+Im Zweifel: reject.
 
 Ist sie sinnvoll (makes_sense): fülle „description“ als STRUKTURIERTE Markdown-
 Aufzählung (NICHT ein Textblock) mit genau diesen Punkten, je als eigene Zeile mit
@@ -378,24 +413,111 @@ Eingabe der Person (Interesse / Verein / besuchte Veranstaltung / Vorlieben):
 Leite das Profil ab und schlage {n} horizonterweiternde, zum Profil passende
 Vorschläge vor (JSON-Liste)."""
 
+NEWS_ACTOR_SYSTEM = """\
+Du extrahierst aus einem Dortmunder Nachrichtenartikel die realen, benannten
+AKTEURE, die als potenzielle Kooperationspartner taugen: Organisationen, Vereine,
+Initiativen, Projekte, Ämter/Behörden, Einrichtungen, Unternehmen.
+Strikte Regeln:
+- NUR konkrete, benannte Akteure, die WIRKLICH im Text vorkommen. Erfinde nichts.
+- KEINE Privatpersonen (keine Namen einzelner Menschen), keine generischen Begriffe
+  („die Stadt“, „Bürger:innen“, „Politik“), keine Medien/Autoren/Journalisten.
+- Für jeden Akteur: „name“ (wie im Text), „type“
+  (verein|initiative|projekt|behoerde|einrichtung|unternehmen|sonstige) und „role“
+  (was er tut, ein knapper Satz).
+Antworte NUR als JSON-Liste (leer [], wenn keine tauglichen Akteure):
+[{{"name":"...","type":"...","role":"..."}}]
+Alle Textfelder auf Deutsch."""
+
+NEWS_ACTOR_PROMPT = """\
+Titel: {title}
+Text: {text}
+
+Extrahiere die realen benannten Akteure (JSON-Liste)."""
+
+SYNERGY_COMPARE_SYSTEM = """\
+Du bewertest mögliche Synergien für EINEN Akteur A mit MEHREREN Kandidaten-Partnern.
+Du hast zu allen Graph-Fakten + Website-Auszüge recherchiert. Vergleiche die
+Kandidaten und wähle die besten echten Synergien aus.
+
+Der ENTSCHEIDENDE Test — ZIELGRUPPE & ANLASS:
+- Würde dieselbe Person beide Angebote plausibel im selben Zusammenhang nutzen, oder
+  will das Publikum des einen das andere wirklich? Nur dann ist es eine Synergie.
+- Bloße Nähe oder Ähnlichkeit reicht NIE.
+
+BEVORZUGE NICHT-OFFENSICHTLICHE, FELDÜBERGREIFENDE Synergien: eine Brücke zwischen
+verschiedenen Bereichen (z.B. Kultur × Wirtschaft, Sport × Gesundheit, Bildung ×
+Gastronomie) ist WERTVOLLER als zwei sehr ähnliche Akteure aus demselben Feld —
+sofern eine echte gemeinsame Zielgruppe/ein Anlass besteht. Setze bei solchen
+`cross_domain` = true.
+
+VERWIRF: inaktive/geschlossene Akteure; vergangene Events; Website passt nicht;
+bereits verbundene Akteure; DERSELBE Akteur / gleiche Serie/Träger; kein echter
+Mehrwert. Bei Zweifeln am MECHANISMUS: reject.
+
+ABER: fehlende Absichtserklärungen, fehlende bestehende Kontakte oder "bisher
+keine gemeinsame Aktivität belegt" sind NIEMALS Ablehnungsgründe — genau das
+macht eine Synergie UNGENUTZT. Bewerte, ob die Verbindung funktionieren KÖNNTE
+(plausibles gemeinsames Publikum, beidseitiger Nutzen, Gelegenheit noch offen),
+nicht ob sie schon angebahnt ist. Das Profil des Akteurs A ergibt sich aus
+seiner Mission/Rolle — auch aus älteren Belegen; eine Stiftung verliert ihren
+Zweck nicht, weil der letzte Artikel über sie älter ist.
+
+Antworte NUR als JSON-Liste — GENAU EIN Eintrag pro Kandidat, in der Reihenfolge der
+Kandidaten. `description` MUSS diese feste, AUSFÜHRLICHE Struktur haben (Markdown-
+Bulletliste, jede Erklärung mehrere Sätze):
+[{{"partner_index":<int>,"verdict":"makes_sense|reject","reason":"...","title":"...",
+  "description":"- **Akteur A:** wer/was, für wen.\\n- **Akteur B:** wer/was, für wen.\\n- **Gemeinsame Zielgruppe / Anlass:** das geteilte Publikum bzw. der Anlass.\\n- **Warum es funktioniert:** ausführliche Begründung, 3–4 Sätze — warum die Zielgruppen zusammenpassen UND was JEDE Seite gewinnt.\\n- **Wie es abläuft:** konkreter Ablauf der Zusammenarbeit, 3–4 Sätze — wer macht was, wie greifen die Angebote ineinander.\\n- **Synergie-Potenzial:** der konkrete Mehrwert/Effekt.",
+  "first_step":"...","contacts":["..."],"cross_domain":true|false}}]
+Alle Textfelder auf Deutsch."""
+
+SYNERGY_COMPARE_PROMPT = """\
+Aktuelles Datum: {today}.
+
+── Akteur A ──
+{anchor_ctx}
+Website A:
+{anchor_site}
+
+── Kandidaten-Partner (bewerte jeden per partner_index) ──
+{candidates}
+
+Vergleiche die Kandidaten, wähle die besten echten Synergien mit A und bewerte jeden
+Kandidaten. Antworte als JSON-Liste."""
+
 RESOURCE_TAG_SYSTEM = """\
-Du verschlagwortest eine Veranstaltung mit RESSOURCEN für komplementäre Synergien:
-was die Veranstaltung BRAUCHT (needs) und was sie selbst BIETET (offers).
-Nutze AUSSCHLIESSLICH Tags aus diesem festen Vokabular (sonst kein Join möglich):
-verpflegung, getraenke, uebernachtung, transport, parkraum, publikum,
+Du verschlagwortest einen AKTEUR oder eine Veranstaltung mit RESSOURCEN für
+komplementäre Synergien: was er/sie BRAUCHT (needs) und was er/sie selbst BIETET
+(offers). Nutze AUSSCHLIESSLICH Tags aus diesem festen Vokabular (sonst kein Join):
+
+Logistik: verpflegung, getraenke, uebernachtung, transport, parkraum,
 veranstaltungsflaeche, technik, sponsoring, sanitaer, kinderbetreuung,
-unterhaltung, sichtbarkeit, einzelhandel, reparatur, ziel, sicherheit, erste_hilfe.
-Beispiel: Radtour → needs [verpflegung, getraenke, ziel, reparatur], offers
-[publikum]. Bierfest → needs [transport, parkraum, sanitaer, sicherheit], offers
-[verpflegung, getraenke, ziel, publikum, unterhaltung].
-Wähle nur klar zutreffende Tags (lieber wenige). Antworte NUR mit JSON."""
+unterhaltung, einzelhandel, reparatur, sicherheit, erste_hilfe.
+Fähigkeit/Feld: betreuung, beratung, bildung, gesundheit, integration,
+begegnung, kultur, sport, umwelt, digital, ehrenamt, finanzierung.
+Generisch (SPARSAM, nur wenn zentral): publikum, sichtbarkeit, ziel.
+
+Regeln:
+- Wähle das SPEZIFISCHSTE zutreffende Tag. Bevorzuge Fähigkeit/Feld-Tags, die den
+  Akteur wirklich beschreiben, vor generischen. Lieber 2-4 treffende Tags als viele.
+- publikum/sichtbarkeit/ziel NUR, wenn Reichweite/Sichtbarkeit der KERN ist (z.B.
+  ein Medium/Journalist BIETET sichtbarkeit; ein kleiner Verein BRAUCHT sie).
+- offers = was der Akteur real leisten/bereitstellen kann; needs = was ihm für
+  seine Arbeit fehlt. Nichts erfinden — nur aus dem gelieferten Text ableiten.
+
+Beispiele:
+- Sozialverein für Wohnungslose → offers [betreuung, beratung, begegnung],
+  needs [finanzierung, sichtbarkeit].
+- Stadtteil-Nachrichtenportal → offers [sichtbarkeit, kultur], needs [].
+- Sportverein → offers [sport, veranstaltungsflaeche], needs [sponsoring].
+Antworte NUR mit JSON."""
 
 RESOURCE_TAG_PROMPT = """\
-Veranstaltung: {label}
-Kategorie: {category}
+Akteur/Veranstaltung: {label}
+Kategorie/Typ: {category}
 Beschreibung: {description}
 
-Gib JSON: {{"needs": ["..."], "offers": ["..."]}} — nur Tags aus dem Vokabular.
+Gib JSON: {{"needs": ["..."], "offers": ["..."]}} — nur Tags aus dem Vokabular,
+das spezifischste zuerst.
 """
 
 DISCUSS_PROMPT = """\
@@ -425,13 +547,27 @@ Frage: {question}
 
 Gib NUR dieses JSON zurück:
 {{
-  "lens": "<factual | synergy | inefficiency | scandal>",
+  "lens": "<factual | synergy | inefficiency | scandal | bedarf | problem | foerderung | chance>",
   "search_text": "<knappe Suchphrase auf Deutsch, auf die Kernabsicht fokussiert; behalte Eigennamen, Stadtteile und Themen, entferne Füllwörter>",
   "node_types": [<0 oder mehr aus: "AgendaItem","Resolution","Meeting","Event","Tender","POI","Organization","Road","GeoArea">],
   "category": "<Veranstaltungskategorie falls genannt, z.B. "Konzert", "Ausstellung", "Führung", "Wochenmarkt", "Kabarett"; sonst null>",
   "list": <true wenn die Frage eine Aufzählung/Liste aller Treffer will, sonst false>,
   "date_from": "<YYYY-MM-DD oder null>",
-  "date_to": "<YYYY-MM-DD oder null>"
+  "date_to": "<YYYY-MM-DD oder null>",
+  "district": "<falls die Frage ein Gebiet nennt: der OFFIZIELLE Dortmunder
+    Stadtbezirk aus GENAU dieser Liste: Innenstadt-West, Innenstadt-Nord,
+    Innenstadt-Ost, Eving, Scharnhorst, Brackel, Aplerbeck, Hörde, Hombruch,
+    Lütgendortmund, Huckarde, Mengede. Übersetze umgangssprachliche Namen
+    (z.B. "Nordstadt" -> "Innenstadt-Nord", "City"/"Innenstadt" ->
+    "Innenstadt-West"). Sonst null>",
+  "recent": <true wenn nach den NEUESTEN/aktuellen/jüngsten Ereignissen,
+    Entwicklungen oder Nachrichten gefragt wird OHNE konkretes Datum ("neueste",
+    "aktuelle", "kürzlich", "was tut sich gerade", "diese Woche"); sonst false>,
+  "needs": [<nur bei lens "bedarf": benötigte Ressourcen aus GENAU diesem Vokabular:
+    "verpflegung","getraenke","uebernachtung","transport","parkraum","publikum",
+    "veranstaltungsflaeche","technik","sponsoring","sanitaer","kinderbetreuung",
+    "unterhaltung","sichtbarkeit","einzelhandel","reparatur","ziel","sicherheit",
+    "erste_hilfe"; sonst []>]
 }}
 
 Regeln:
@@ -440,6 +576,25 @@ Regeln:
   Doppelarbeit/Verschwendung -> "inefficiency"; Auffälligkeiten/Unregelmäßigkeiten/
   Missstände/"Skandale"/Interessenkonflikte -> "scandal"; Kriminalität/Straftaten/
   Diebstähle/Einbrüche/Polizeimeldungen/Sicherheit/Vorfälle-Muster -> "crime".
+- lens = "foerderung", wenn nach FÖRDERUNGEN/Fördermitteln/Zuschüssen/
+  Finanzierungsprogrammen für einen konkreten Akteur oder eine Akteursart
+  gefragt wird ("welche Förderungen passen zu X", "gibt es Zuschüsse für …").
+  search_text = der Akteur bzw. die Akteursbeschreibung.
+- lens = "problem", wenn nach den PROBLEMEN/Missständen der Stadt oder eines
+  Stadtteils gefragt wird und/oder wer sie lösen könnte ("welche Probleme hat
+  X und wer löst sie", "was fehlt in …", "wer könnte … beheben").
+  search_text = Thema/Gebiet.
+- lens = "bedarf", wenn der/die Fragende SELBST etwas vorhat und Unterstützung,
+  Ressourcen oder Partner sucht ("ich möchte … organisieren", "wer kann mir
+  helfen", "ich brauche/suche …", "wo finde ich … für mein Projekt"). Dann
+  "needs" füllen: zerlege das Vorhaben in die benötigten Ressourcen und wähle
+  NUR Begriffe aus dem Vokabular (z.B. eine Messe organisieren ->
+  ["veranstaltungsflaeche","technik","verpflegung","sicherheit","erste_hilfe",
+  "sponsoring","sichtbarkeit","parkraum"]). search_text = das Vorhaben/Thema.
+- lens = "chance", wenn nach GESCHÄFTSCHANCEN/Marktlücken/Versorgungslücken/
+  Gründungsideen gefragt wird ("wo sind Lücken", "welche Geschäftsidee lohnt sich
+  in …", "was fehlt wirtschaftlich in Dortmund/Stadtteil X", "wo könnte man ein
+  Geschäft eröffnen"). search_text = Thema/Branche falls genannt, sonst allgemein.
 - node_types nur setzen, wenn die Frage klar einen Typ meint:
   Ratsbeschlüsse/Anträge -> ["Resolution","AgendaItem"]; Sitzungen -> ["Meeting"];
   Veranstaltungen/Events/Konzerte/Nachrichten -> ["Event"]; Ausschreibungen -> ["Tender"];
@@ -454,4 +609,256 @@ Regeln:
   "nächstes Wochenende", "im Juli", "seit 2022"). Berechne konkrete Daten relativ zum
   heutigen Datum. Sonst beide null.
 - search_text immer ausfüllen. Nur valides JSON, kein weiterer Text.
+"""
+
+
+BEDARF_SYSTEM = """\
+Du bist ein Assistent für den Wissensgraphen der Stadt Dortmund. Der/die Fragende
+hat ein VORHABEN und sucht konkrete Unterstützung. Du bekommst reale Akteure aus
+dem Graphen, gruppiert nach der Ressource, die sie anbieten, plus Akteure mit
+thematischer Erfahrung. Stelle daraus eine praktische, gegliederte Antwort
+zusammen.
+
+Regeln:
+- NUR die gelieferten Akteure verwenden — nichts erfinden, keine Akteure aus
+  eigenem Wissen ergänzen.
+- Pro Bedarf die 2–4 passendsten nennen (Name, was sie beitragen, Kontakt/Ort
+  falls vorhanden). Nicht jede Liste vollständig abschreiben.
+- Wenn für einen Bedarf nichts Brauchbares dabei ist, das ehrlich sagen.
+- Mit einem kurzen praktischen "Erste Schritte"-Absatz enden.
+- Deutsch, Markdown, Überschriften pro Bedarf.
+"""
+
+BEDARF_PROMPT = """\
+Heutiges Datum: {today}.
+
+Vorhaben: {question}
+
+Benötigte Ressourcen und Akteure aus dem Graphen, die sie anbieten:
+
+{offers_block}
+
+Akteure mit thematischer Erfahrung ({search_text}):
+
+{experience_block}
+
+Erstelle die gegliederte Antwort.
+"""
+
+
+# ── Problem layer (news → civic problems → solvers) ─────────────────────────────
+
+PROBLEM_EXTRACT_SYSTEM = """\
+Du liest Lokalnachrichten aus Dortmund und extrahierst KOMMUNALE PROBLEME:
+Missstände, Versorgungslücken, Konflikte, Engpässe, die die Stadt oder einen
+Stadtteil aktuell betreffen und die man durch Handeln lösen oder lindern könnte.
+
+Regeln:
+- NUR echte, andauernde Probleme (Leerstand, fehlende Angebote, unsichere
+  Kreuzung, Vereinsamung, Personalmangel …). KEINE Einzelereignisse (ein
+  Diebstahl, ein Unfall), keine bloßen Meinungen, keine Parteipolitik.
+- NIE Privatpersonen nennen. Ämter/Organisationen nur in ihrer Rolle.
+- "needs" = was zur Lösung beitragen würde, NUR aus diesem Vokabular:
+  verpflegung, getraenke, uebernachtung, transport, parkraum, publikum,
+  veranstaltungsflaeche, technik, sponsoring, sanitaer, kinderbetreuung,
+  unterhaltung, sichtbarkeit, einzelhandel, reparatur, ziel, sicherheit,
+  erste_hilfe. Leere Liste, wenn nichts passt.
+- Beschreibt der Artikel kein solches Problem: leere Liste [].
+- Antworte NUR mit validem JSON: eine Liste von Objekten
+  {"name": "<kurzer, wiedererkennbarer Problemtitel>",
+   "theme": "<1-3 Wörter>",
+   "district": "<Stadtteil/Stadtbezirk oder null>",
+   "affected": "<betroffene Gruppe oder null>",
+   "needs": ["<vokabular>"]}
+"""
+
+PROBLEM_EXTRACT_PROMPT = """\
+Titel: {title}
+Text: {text}
+"""
+
+PROBLEM_ANSWER_SYSTEM = """\
+Du bist ein Assistent für den Wissensgraphen der Stadt Dortmund. Du bekommst
+aktuelle, aus Nachrichten destillierte PROBLEME der Stadt (mit Belegen) und je
+Problem reale Akteure aus dem Graphen, die zur Lösung beitragen könnten
+(gruppiert nach benötigter Ressource).
+
+Erstelle eine gegliederte Antwort: pro Problem
+1. das Problem in 1–2 Sätzen, mit Beleg (Quelle/Datum),
+2. die mögliche KOALITION — die gelieferten Akteure, die die Bedarfe des Problems
+   GEMEINSAM decken. Sag pro Akteur, WELCHEN Bedarf er abdeckt (Tag) und was über
+   ihn belegt ist (Typ/Rolle/Kontakt). Der Mehrwert liegt in der Kombination:
+   benenne, warum die Akteure ZUSAMMEN mehr abdecken als einzeln.
+3. ein gemeinsamer ERSTER SCHRITT (wer spricht wen an) — knapp, kein Detailplan,
+4. wo passend: ein VERANSTALTUNGSFORMAT, das die Lücke adressieren würde
+   (knapp: Format, Zielgruppe, möglicher Ort aus den Akteuren),
+5. offene, NICHT gedeckte Bedarfe ehrlich benennen.
+
+Harte Regeln — das ist eine KANDIDATENLISTE, kein fertiger Lösungsplan:
+- NUR gelieferte Akteure/Fakten verwenden, nichts erfinden.
+- KEINE operativen Detailpläne erfinden (keine Abteilungsaufteilungen,
+  Personal-Pools, Verbundmodelle o.Ä.) — was ein Akteur intern leisten kann,
+  wissen wir nicht. Formuliere Beiträge als "könnte angesprochen werden für …",
+  gestützt auf seinen belegten Typ/Rolle/Tags.
+- Fehlen die eigentlich zuständigen Akteure (Behörden, Politik, Fachträger),
+  sage das ausdrücklich statt Ersatzlösungen zu konstruieren.
+- Fehlt für einen Bedarf ein passender Akteur, ehrlich sagen.
+- Über Amtsträger nur belegte Fakten. Deutsch, Markdown, ## pro Problem.
+"""
+
+PROBLEM_ANSWER_PROMPT = """\
+Heutiges Datum: {today}.
+
+Frage: {question}
+
+Probleme mit Belegen und Lösungs-Kandidaten:
+
+{problems_block}
+
+Erstelle die gegliederte Antwort.
+"""
+
+
+PROBLEM_DEEP_SYSTEM = """\
+Du bist der kritische PRÜFER des Wissensgraphen der Stadt Dortmund. Du bekommst
+EIN destilliertes Problem (mit Belegen) und Kandidaten-Akteure — jeweils mit
+Graph-Kontext und, wo verfügbar, recherchiertem Website-Inhalt.
+
+Deine Aufgabe in dieser Reihenfolge:
+1. PRÜFE jeden Kandidaten: Kann er laut Website/Kontext plausibel etwas zu
+   DIESEM Problem beitragen? Sei streng — ein Krankenhaus "löst" keine
+   Landes-Sparpolitik; ein Café löst keinen Pflegenotstand.
+2. VERWIRF unplausible Kandidaten mit einem Ein-Satz-Grund.
+3. Aus den verbleibenden: benenne realistische, BESCHEIDENE Beiträge
+   (ansprechbar für X, bietet belegtes Y). Keine erfundenen Operativpläne.
+4. Eine Zwei-Akteure-Kombination NUR, wenn beide Websites/Kontexte belegen,
+   dass ihre Angebote sich für dieses Problem ergänzen.
+5. Sage klar, welche eigentlich zuständigen Akteure (Amt, Träger, Politik) in
+   den Daten FEHLEN.
+
+Antworte auf Deutsch als Markdown:
+## <Problemtitel>
+kurzes Problem + Beleg · dann "Geprüfte Ansprechpartner" (mit Beitrag + Beleg
+aus Website/Kontext) · ggf. "Ergänzende Kombination" · "Geprüft und verworfen"
+(je 1 Zeile mit Grund) · "Fehlende Akteure".
+"""
+
+PROBLEM_DEEP_PROMPT = """\
+Heutiges Datum: {today}.
+
+Problem (aus Nachrichten destilliert):
+{problem_block}
+
+Kandidaten mit Graph-Kontext und Website-Recherche:
+
+{dossiers}
+
+Erstelle die geprüfte Antwort.
+"""
+
+
+# ── Förderprogramm normalization (NRW.BANK / city pages → structured node) ──────
+
+FOERDERUNG_NORM_SYSTEM = """\
+Du normalisierst die Beschreibung eines Förderprodukts in ein festes Schema.
+Antworte NUR mit validem JSON:
+{"level": "<bund | land | kommune>",
+ "funder": "<förderndes Institut/Programmträger, kurz>",
+ "target_groups": [<aus GENAU: "gruendung","kmu","unternehmen",
+   "verein_gemeinnuetzig","kommune","kultur","sozial","wohnen",
+   "landwirtschaft","privatperson","bildung_forschung">],
+ "themes": [<1-4 kurze Themen-Schlagworte, frei, z.B. "Digitalisierung">],
+ "funding_type": "<zuschuss | darlehen | buergschaft | beteiligung | preis>",
+ "max_amount_eur": <Zahl oder null>,
+ "open_ended": <true wenn laufend beantragbar, false bei fester Frist>,
+ "deadline": "<YYYY-MM-DD oder null>",
+ "summary": "<2 Sätze: wer bekommt was wofür>"}
+
+Regeln: target_groups NUR aus dem Vokabular, alles Zutreffende. level "bund",
+wenn ein Bundesprogramm (KfW/ERP/BAFA/Bundesministerium) durchgeleitet wird,
+sonst "land". Erfinde nichts; unbekannte Felder null.
+"""
+
+FOERDERUNG_NORM_PROMPT = """\
+Titel: {title}
+
+Seitentext:
+{text}
+"""
+
+
+FOERDERUNG_MATCH_SYSTEM = """\
+Du prüfst, welche Förderprogramme zu EINEM konkreten Dortmunder Akteur passen.
+Du bekommst den Akteur (Graph-Kontext) und Kandidaten-Programme (normalisierte
+Kriterien + Zusammenfassung). Sei streng: ein Programm passt nur, wenn der
+Akteur plausibel zur Zielgruppe gehört UND der Förderzweck zu seiner belegten
+Tätigkeit passt.
+
+Antworte NUR als JSON-Liste, GENAU ein Eintrag pro Programm, in Reihenfolge:
+[{"program_index": <int>,
+  "verdict": "<passt | vielleicht | passt_nicht>",
+  "confidence": <0..1>,
+  "begruendung": "<1-2 Sätze: warum (nicht), gestützt auf die Kriterien>",
+  "zu_pruefen": "<die konkrete Bedingung, die der Akteur selbst klären muss, oder null>"}]
+
+Regeln: Bei "vielleicht" MUSS zu_pruefen gefüllt sein. Erfinde keine Kriterien.
+Alle Texte Deutsch.
+"""
+
+FOERDERUNG_MATCH_PROMPT = """\
+Aktuelles Datum: {today}.
+
+── Akteur ──
+{actor_ctx}
+
+── Kandidaten-Programme (bewerte jedes per program_index) ──
+{programs}
+
+Bewerte jedes Programm.
+"""
+
+
+OPPORTUNITY_SYSTEM = """\
+Du bist Standort- und Gründungsberater:in für Dortmund. Du bekommst REALE Signale
+aus dem Wissensgraphen: Versorgungslücken je Stadtbezirk (Ist-Zahl der
+Betriebe/Dienste gegen den nach Handelsdichte ERWARTETEN Wert), Leerstände
+(freie Ladenlokale), Stadtteil-Profile (Alter, Minderjährige, Sozialquoten) und
+aus Nachrichten destillierte aktuelle Probleme. Daraus formst du konkrete
+GESCHÄFTSCHANCEN — branchenoffen, nicht auf ein Feld beschränkt.
+
+Regeln:
+- NUR die gelieferten Signale nutzen. Keine Betriebe, Zahlen oder Stadtteile
+  erfinden. Jede Chance MUSS auf ein konkretes Signal zeigen (Stadtbezirk +
+  Kategorie + Defizit, ein Problem, oder Leerstand).
+- Eine Lücke ist eine HYPOTHESE, kein Fakt: die POI-Daten (OpenStreetMap) sind
+  nicht vollständig, "Defizit" heißt relative Unterversorgung, nicht bewiesener
+  Bedarf. Sag das offen. Zahlen als das benennen, was sie sind (OSM-Zählung).
+- Nachfrage plausibel machen: verknüpfe die Lücke mit dem Stadtteil-Profil
+  (z.B. hoher Minderjährigenanteil -> Kinderdienste; hoher Altenanteil ->
+  Gesundheit/Nahversorgung) und passenden Problemen.
+- Pro Chance: **Was** (Betrieb/Dienst), **Wo** (Stadtbezirk), **Warum** (Signal +
+  Nachfrage), **Zu prüfen** (Wettbewerb vor Ort, Miete, OSM-Vollständigkeit,
+  Kaufkraft). 4–7 Chancen, über verschiedene Stadtbezirke und Branchen gestreut.
+- Keine Charakterisierung realer Personen. Deutsch, Markdown, eine Überschrift
+  pro Chance.
+"""
+
+OPPORTUNITY_PROMPT = """\
+Aktuelles Datum: {today}.
+
+Frage: {question}
+
+── Versorgungslücken (Ist vs. erwartet je Stadtbezirk; hohes Defizit = unterversorgt) ──
+{gaps}
+
+── Leerstände (freie Ladenlokale je Stadtbezirk) ──
+{vacancies}
+
+── Stadtteil-Profile (Nachfrageseite) ──
+{profiles}
+
+── Aktuelle Probleme aus dem Nachrichtenbestand ──
+{problems}
+
+Leite daraus konkrete, belegte Geschäftschancen ab.
 """

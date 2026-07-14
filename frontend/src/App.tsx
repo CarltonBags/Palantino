@@ -27,7 +27,15 @@ export default function App() {
   const [asOf, setAsOf] = useState<string>(""); // "" = current
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [view, setView] = useState<
-    "map" | "chat" | "insights" | "tellerrand" | "history" | "leads"
+    | "map"
+    | "chat"
+    | "insights"
+    | "tellerrand"
+    | "history"
+    | "leads"
+    | "foerderung"
+    | "chance"
+    | "problem"
   >("map");
 
   // Changing the as-of instant invalidates all cached point layers.
@@ -120,6 +128,24 @@ export default function App() {
         <button className={view === "leads" ? "active" : ""} onClick={() => setView("leads")}>
           Akquise
         </button>
+        <button
+          className={view === "foerderung" ? "active" : ""}
+          onClick={() => setView("foerderung")}
+        >
+          Förderungen
+        </button>
+        <button
+          className={view === "chance" ? "active" : ""}
+          onClick={() => setView("chance")}
+        >
+          Chancen
+        </button>
+        <button
+          className={view === "problem" ? "active" : ""}
+          onClick={() => setView("problem")}
+        >
+          Probleme
+        </button>
       </div>
 
       {view === "chat" ? (
@@ -140,6 +166,58 @@ export default function App() {
             "Welche Vereine oder sozialen Einrichtungen wären gute Beratungskund:innen?",
             "Welche Veranstalter mit viel Organisationsaufwand wären Interessenten?",
             "Welche Einrichtungen mit viel manueller Verwaltung gibt es?",
+          ]}
+          showEventPicker={false}
+          onOpenNode={(id) => {
+            setSelectedId(id);
+            setView("map");
+          }}
+        />
+      ) : view === "foerderung" ? (
+        <ChatView
+          lens="foerderung"
+          title="Förder-Radar"
+          subtitle="Prüfe, welche Förderprogramme (Land NRW + Bund, 400+ im Bestand) zu einem konkreten Verein, Unternehmen oder einer Einrichtung passen — mit Begründung und dem, was selbst zu klären ist."
+          examples={[
+            "Welche Förderungen passen zur Auslandsgesellschaft?",
+            "Gibt es Zuschüsse für das Kulturzentrum balou?",
+            "Welche Programme passen zu einem kleinen Handwerksbetrieb?",
+            "Fördermittel für einen gemeinnützigen Sportverein?",
+          ]}
+          showEventPicker={false}
+          onOpenNode={(id) => {
+            setSelectedId(id);
+            setView("map");
+          }}
+        />
+      ) : view === "chance" ? (
+        <ChatView
+          lens="chance"
+          title="Geschäftschancen"
+          subtitle="Wo hat Dortmund Marktlücken? Versorgungslücken je Stadtbezirk (Betriebsdichte), Leerstände, Stadtteil-Profile und aktuelle Probleme — zu konkreten Gründungs- und Geschäftschancen verdichtet. Branchenoffen."
+          examples={[
+            "Wo gibt es in Dortmund Geschäftschancen und Marktlücken?",
+            "Welche Versorgungslücken hat die Nordstadt?",
+            "Wo könnte man ein neues Geschäft eröffnen?",
+            "Welche Gründungsidee lohnt sich in Hörde?",
+          ]}
+          showEventPicker={false}
+          onOpenNode={(id) => {
+            setSelectedId(id);
+            setView("map");
+          }}
+        />
+      ) : view === "problem" ? (
+        <ChatView
+          showModeToggle
+          lens="problem"
+          title="Probleme & Koalitionen"
+          subtitle="Welche Probleme hat ein Stadtteil — und wer könnte sie GEMEINSAM lösen? Aus Nachrichten destillierte Probleme, je Problem eine Koalition aus Akteuren, die die Bedarfe zusammen decken. Mit Tiefensuche werden die Kandidaten auf ihren Websites geprüft und unplausible verworfen."
+          examples={[
+            "Welche Probleme hat die Nordstadt und wer könnte sie lösen?",
+            "Was fehlt in Hörde — und wer könnte es gemeinsam beheben?",
+            "Welche Missstände gibt es in Dortmund?",
+            "Wer könnte die Vereinsamkeit älterer Menschen angehen?",
           ]}
           showEventPicker={false}
           onOpenNode={(id) => {

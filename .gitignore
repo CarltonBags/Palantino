@@ -17,3 +17,11 @@ frontend/.next/
 
 # local secrets (certs, keys) — never commit
 secrets/
+backfill.log
+refresh_candidates.log
+refresh.pid
+uvicorn.log
+problems_backfill.log
+actor_tags_fast.log
+events_ingest.log
+foerderung_ingest.log

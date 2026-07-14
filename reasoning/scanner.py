@@ -494,6 +494,51 @@ async def _reason(candidate: Candidate, insight_type: str) -> list[dict[str, Any
     return parse_insights(text)
 
 
+async def expire_stale_insights(keep_days: int = 14) -> int:
+    """Dismiss accumulated 'new' insights that are stale: older than keep_days, or
+    referencing an evidence node that no longer has a current version (event closed /
+    superseded). Keeps the Insights view reflecting NOW instead of piling up."""
+    async with _get_conn() as conn:
+        result = await conn.execute(
+            f"""
+            UPDATE insights i SET status = 'dismissed'
+            WHERE i.status = 'new'
+              AND (
+                i.created_at < now() - make_interval(days => {int(keep_days)})
+                OR NOT EXISTS (
+                    SELECT 1 FROM nodes n
+                    WHERE n.id = ANY(i.evidence_node_ids) AND n.valid_to IS NULL)
+                OR EXISTS (
+                    SELECT 1 FROM nodes n
+                    WHERE n.id = ANY(i.evidence_node_ids)
+                      AND n.node_type = 'Event'
+                      AND n.source = 'dortmund_veranstaltungskalender'
+                      AND n.valid_from < CURRENT_DATE)
+              )
+            """
+        )
+    n = int(result.split()[-1]) if result and result.split()[-1].isdigit() else 0
+    logger.info("expired %d stale insights", n)
+    return n
+
+
+def _cap_node_reuse(candidates: list[Candidate], cap: int = 2) -> list[Candidate]:
+    """Drop candidates whose primary actors are already in `cap` insights this run —
+    stops one hub (a market, a popular café) from spawning near-identical insights."""
+    from collections import Counter
+
+    seen: Counter[str] = Counter()
+    out = []
+    for c in candidates:
+        primary = c.node_ids[:2]
+        if any(seen[nid] >= cap for nid in primary):
+            continue
+        for nid in primary:
+            seen[nid] += 1
+        out.append(c)
+    return out
+
+
 async def _persist(
     candidate: Candidate, insight_type: str, insight: dict[str, Any], scan_id: str | None = None
 ) -> bool:
@@ -560,8 +605,13 @@ async def scan(
         # News-context candidates run through synergy only (they surface creative
         # news→event/place connections, not inefficiencies).
         news_candidates = dedup_candidates(await news_context_candidates(news_limit=limit))
+    # cap node reuse so one hub (a market/café) can't spawn many near-identical
+    # insights, and dismiss the previous run's stale/accumulated ones.
+    candidates = _cap_node_reuse(candidates)
+    news_candidates = _cap_node_reuse(news_candidates)
+    await expire_stale_insights()
     logger.info(
-        "insight scan: %d candidate subgraphs + %d news-context (deduped)",
+        "insight scan: %d candidate subgraphs + %d news-context (deduped, capped)",
         len(candidates), len(news_candidates),
     )
 

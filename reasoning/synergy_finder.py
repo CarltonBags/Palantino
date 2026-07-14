@@ -25,7 +25,12 @@ from bs4 import BeautifulSoup
 from config import settings
 from db.session import get_conn
 from reasoning.llm import complete
-from reasoning.prompts import SYNERGY_RESEARCH_PROMPT, SYNERGY_RESEARCH_SYSTEM
+from reasoning.prompts import (
+    SYNERGY_COMPARE_PROMPT,
+    SYNERGY_COMPARE_SYSTEM,
+    SYNERGY_RESEARCH_PROMPT,
+    SYNERGY_RESEARCH_SYSTEM,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -43,6 +48,80 @@ def _parse_obj(raw: str) -> dict[str, Any]:
         return json.loads(text[start : end + 1])
     except json.JSONDecodeError:
         return {}
+
+
+def pair_key(a: str, b: str) -> str:
+    x, y = sorted([str(a), str(b)])
+    return f"{x}|{y}"
+
+
+async def suppressed_pair_keys() -> set[str]:
+    """Pairs that must never be proposed as partners: ones the finder or the
+    user judged negative, plus pairs entity resolution merged (SAME_AS) — an
+    actor can't have a synergy with its own register entry or storefront."""
+    async with get_conn() as conn:
+        rows = await conn.fetch(
+            "SELECT pair_key FROM synergy_feedback WHERE verdict IN ('reject','dismissed')"
+        )
+        same = await conn.fetch(
+            "SELECT from_node_id, to_node_id FROM edges"
+            " WHERE edge_type = 'SAME_AS' AND valid_to IS NULL"
+        )
+    keys = {r["pair_key"] for r in rows}
+    keys |= {pair_key(r["from_node_id"], r["to_node_id"]) for r in same}
+    return keys
+
+
+async def record_synergy_feedback(results: list[dict[str, Any]], source: str = "llm") -> int:
+    """Persist verdicts on pairs. User verdicts outrank the LLM's (a later llm write
+    never clobbers a user one)."""
+    rows = []
+    for r in results:
+        ev = r.get("evidence_node_ids") or []
+        if len(ev) < 2 or not r.get("verdict"):
+            continue
+        a, b = sorted([str(ev[0]), str(ev[1])])
+        rows.append((f"{a}|{b}", a, b, r["verdict"], (r.get("reason") or "")[:500], source))
+    if not rows:
+        return 0
+    async with get_conn() as conn:
+        await conn.executemany(
+            """
+            INSERT INTO synergy_feedback (pair_key, node_a, node_b, verdict, reason, source, updated_at)
+            VALUES ($1,$2::uuid,$3::uuid,$4,$5,$6, now())
+            ON CONFLICT (pair_key) DO UPDATE SET
+                verdict = EXCLUDED.verdict, reason = EXCLUDED.reason,
+                source = EXCLUDED.source, updated_at = now()
+            WHERE synergy_feedback.source <> 'user' OR EXCLUDED.source = 'user'
+            """,
+            rows,
+        )
+        # keep the all-pairs frontier in sync: judged pairs leave `new` at once,
+        # not only at the next candidate refresh
+        await conn.execute(
+            """
+            UPDATE synergy_candidates sc
+            SET status = CASE WHEN f.verdict IN ('reject', 'dismissed')
+                              THEN 'suppressed' ELSE 'validated' END
+            FROM synergy_feedback f
+            WHERE f.pair_key = sc.pair_key AND sc.status = 'new'
+            """
+        )
+    return len(rows)
+
+
+def _parse_list(raw: str) -> list[dict[str, Any]]:
+    text = (raw or "").strip()
+    if text.startswith("```"):
+        text = text.split("```", 2)[1].lstrip("json").strip()
+    start, end = text.find("["), text.rfind("]")
+    if start == -1 or end <= start:
+        return []
+    try:
+        data = json.loads(text[start : end + 1])
+    except json.JSONDecodeError:
+        return []
+    return [d for d in data if isinstance(d, dict)]
 
 
 async def _gather_partner_context(conn: Any, node: dict[str, Any]) -> tuple[str, str | None]:
@@ -102,20 +181,49 @@ async def _validate(ctx_a: str, site_a: str, ctx_b: str, site_b: str, note: str)
     return _parse_obj(await complete(SYNERGY_RESEARCH_SYSTEM, prompt, max_tokens=4000))
 
 
-async def _evaluate_pair(client: httpx.AsyncClient, a: dict, b: dict, note: str) -> dict[str, Any]:
-    # own pool connection so pairs can be evaluated concurrently
+async def _research_actor(client: httpx.AsyncClient, node: dict) -> tuple[str, str, str]:
+    """Graph context + website for one actor (own pool conn → concurrency-safe)."""
     async with get_conn() as conn:
-        ctx_a, url_a = await _gather_partner_context(conn, a)
-        ctx_b, url_b = await _gather_partner_context(conn, b)
-    site_a = await _fetch_website(url_a, client)
-    site_b = await _fetch_website(url_b, client)
-    v = await _validate(ctx_a, site_a, ctx_b, site_b, note)
-    if v.get("verdict") not in ("makes_sense", "reject"):
-        v["verdict"] = "reject"
-    v["partners"] = [a["label"], b["label"]]
-    v["evidence_node_ids"] = [str(a["id"]), str(b["id"])]
-    v["researched_websites"] = [u for u in (url_a, url_b) if u]
-    return v
+        ctx, url = await _gather_partner_context(conn, node)
+    site = await _fetch_website(url, client)
+    return ctx, site, url
+
+
+async def evaluate_anchor(
+    client: httpx.AsyncClient, anchor: dict, partners: list[dict],
+) -> list[dict[str, Any]]:
+    """Comparative validation (#2): research the anchor + ALL its candidate partners,
+    then ONE LLM call ranks/picks the best real synergies (and rejects the rest with
+    reasons) — instead of N isolated per-pair yes/no calls. The prompt prefers
+    non-obvious cross-domain bridges (#4)."""
+    if not partners:
+        return []
+    a_ctx, a_site, a_url = await _research_actor(client, anchor)
+    researched = await asyncio.gather(*(_research_actor(client, p) for p in partners))
+
+    blocks = []
+    for i, (p, (ctx, site, _url)) in enumerate(zip(partners, researched)):
+        blocks.append(f"[{i}] {ctx}\nWebsite: {site or '(keine gefunden)'}")
+    prompt = SYNERGY_COMPARE_PROMPT.format(
+        today=date.today().isoformat(),
+        anchor_ctx=a_ctx, anchor_site=a_site or "(keine gefunden)",
+        candidates="\n\n".join(blocks),
+    )
+    items = _parse_list(await complete(SYNERGY_COMPARE_SYSTEM, prompt, max_tokens=6000))
+
+    results: list[dict[str, Any]] = []
+    for it in items:
+        idx = it.get("partner_index")
+        if not isinstance(idx, int) or not (0 <= idx < len(partners)):
+            continue
+        p = partners[idx]
+        if it.get("verdict") not in ("makes_sense", "reject"):
+            it["verdict"] = "reject"
+        it["partners"] = [anchor["label"], p["label"]]
+        it["evidence_node_ids"] = [str(anchor["id"]), str(p["id"])]
+        it["researched_websites"] = [u for u in (a_url, researched[idx][2]) if u]
+        results.append(it)
+    return results
 
 
 async def _global_pairs(pool: int = 40) -> list[tuple[dict, dict, str]]:
@@ -125,6 +233,15 @@ async def _global_pairs(pool: int = 40) -> list[tuple[dict, dict, str]]:
         structural_synergy_candidates,
     )
 
+    # First choice: the precomputed all-pairs frontier (candidate_engine) —
+    # the highest-scoring not-yet-validated pairs across the whole actor set.
+    from reasoning.candidate_engine import frontier_pairs
+
+    frontier = await frontier_pairs(limit=pool)
+    if len(frontier) >= pool // 2:
+        return frontier
+
+    # Fallback (frontier empty / not yet refreshed): the live generators.
     # Favour complementary (need↔offer = real audience/occasion fit) over pure
     # proximity, which produces near-but-incompatible pairs.
     from collections import Counter
@@ -159,18 +276,30 @@ async def find_synergies(
     """
     if pairs is None:
         pairs = await _global_pairs(pool=40)
+    suppressed = await suppressed_pair_keys()
+    pairs = [
+        (a, b, note) for a, b, note in pairs
+        if pair_key(str(a["id"]), str(b["id"])) not in suppressed
+    ]
+
+    # Group by anchor (first node of each pair) → one comparative LLM call per anchor
+    # over all its candidate partners (fewer calls, better selection).
+    anchors: dict[str, tuple[dict, list[dict]]] = {}
+    for a, b, _note in pairs:
+        aid = str(a["id"])
+        if aid not in anchors:
+            anchors[aid] = (a, [])
+        if str(b["id"]) != aid and all(str(b["id"]) != str(x["id"]) for x in anchors[aid][1]):
+            anchors[aid][1].append(b)
+    order = list(anchors.values())
     if shuffle:
-        random.shuffle(pairs)  # variety across un-scoped calls
+        random.shuffle(order)
 
     results: list[dict[str, Any]] = []
     validated = 0
-    batch = 6  # evaluate pairs concurrently, stop once n validated
     async with httpx.AsyncClient(headers={"User-Agent": settings.bot_user_agent}) as client:
-        for i in range(0, len(pairs), batch):
-            chunk = pairs[i : i + batch]
-            evaluated = await asyncio.gather(
-                *(_evaluate_pair(client, a, b, note) for a, b, note in chunk)
-            )
+        for anchor, partners in order:
+            evaluated = await evaluate_anchor(client, anchor, partners[:6])
             results.extend(evaluated)
             validated = sum(
                 1 for r in results if r.get("verdict") == "makes_sense" and r.get("description")

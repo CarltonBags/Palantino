@@ -23,6 +23,7 @@ logger = logging.getLogger(__name__)
 EMBED_NODE_TYPES = (
     "Event", "Meeting", "Resolution", "AgendaItem", "Tender",
     "POI", "Organization", "GeoArea", "ConstructionSite", "BudgetItem",
+    "Problem", "FundingProgram", "Journalist",
 )
 
 _WRITE_BATCH = 256

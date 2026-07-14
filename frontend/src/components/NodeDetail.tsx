@@ -14,6 +14,10 @@ export default function NodeDetail({ nodeId, onSelect }: Props) {
   const [insight, setInsight] = useState<Insight | null>(null);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
+  const [funding, setFunding] = useState<
+    Awaited<ReturnType<typeof api.matchFoerderung>> | null
+  >(null);
+  const [fundingBusy, setFundingBusy] = useState(false);
 
   useEffect(() => {
     let live = true;
@@ -21,6 +25,7 @@ export default function NodeDetail({ nodeId, onSelect }: Props) {
     setEdges([]);
     setHistory([]);
     setInsight(null);
+    setFunding(null);
     setErr(null);
     Promise.all([api.node(nodeId), api.nodeEdges(nodeId), api.nodeHistory(nodeId)])
       .then(([n, e, h]) => {
@@ -143,7 +148,41 @@ export default function NodeDetail({ nodeId, onSelect }: Props) {
           <button onClick={() => explain("synergy")} disabled={busy}>
             Synergien finden
           </button>
+          {(node.node_type === "Organization" || node.node_type === "POI") && (
+            <button
+              disabled={fundingBusy}
+              onClick={async () => {
+                setFundingBusy(true);
+                setErr(null);
+                try {
+                  setFunding(await api.matchFoerderung(nodeId));
+                } catch (ex) {
+                  setErr(String(ex));
+                } finally {
+                  setFundingBusy(false);
+                }
+              }}
+            >
+              Förderungen prüfen
+            </button>
+          )}
         </div>
+        {fundingBusy && <div className="muted">Förder-Check läuft…</div>}
+        {funding?.filter((f) => f.verdict !== "passt_nicht").map((f) => (
+          <div className="insight" key={f.program_id}>
+            <div className="it">
+              {f.verdict === "passt" ? "✓ " : "? "}
+              <a href={f.source_url} target="_blank" rel="noreferrer">
+                {f.program}
+              </a>
+            </div>
+            <div>{f.begruendung}</div>
+            {f.zu_pruefen && <div className="muted">Zu prüfen: {f.zu_pruefen}</div>}
+          </div>
+        ))}
+        {funding && funding.every((f) => f.verdict === "passt_nicht") && (
+          <div className="muted">Kein Programm im Bestand passt zu diesem Akteur.</div>
+        )}
         {busy && <div className="muted">Analyse läuft…</div>}
         {insight?.insights?.map((it, i) => (
           <div className="insight" key={i}>

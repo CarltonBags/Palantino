@@ -335,7 +335,7 @@ async def chat(req: ChatRequest) -> dict[str, Any]:
             """,
             req.question, result["answer"], intent.get("lens"),
             intent, result.get("citations", []), active_model(),
-            req.retrieval if req.retrieval in ("semantic", "structural", "complementary", "deep") else "semantic",
+            req.retrieval if req.retrieval in ("semantic", "structural", "complementary", "graph", "deep") else "semantic",
         )
     result["id"] = str(row["id"])
     return result
@@ -641,11 +641,17 @@ async def set_insight_status(insight_id: UUID, req: InsightStatusRequest) -> dic
         raise HTTPException(status_code=400, detail="Invalid status")
     async with get_conn() as conn:
         row = await conn.fetchrow(
-            "UPDATE insights SET status = $2 WHERE id = $1 RETURNING id",
+            "UPDATE insights SET status = $2 WHERE id = $1 RETURNING id, evidence_node_ids::text[] AS ev",
             str(insight_id), req.status,
         )
     if not row:
         raise HTTPException(status_code=404, detail="Insight not found")
+    # feedback loop: a user confirm/dismiss teaches the synergy finder (user > llm)
+    if req.status in ("confirmed", "dismissed") and len(row["ev"] or []) >= 2:
+        from reasoning.synergy_finder import record_synergy_feedback
+        await record_synergy_feedback(
+            [{"evidence_node_ids": row["ev"], "verdict": req.status}], source="user"
+        )
     return {"id": str(insight_id), "status": req.status}
 
 
@@ -763,3 +769,82 @@ async def ingestion_status() -> list[dict[str, Any]]:
             """
         )
     return [dict(r) for r in rows]
+
+
+# ── Akquise pipeline (lead status memory) ────────────────────────────────────
+
+class LeadStatusRequest(BaseModel):
+    status: str  # contacted | not_interested | customer | ignore
+    note: str | None = None
+
+
+@app.post("/leads/{node_id}/status")
+async def set_lead_status(node_id: UUID, req: LeadStatusRequest) -> dict[str, Any]:
+    """Record what happened with a lead. Any status removes the actor from
+    future generated lead lists; the pipeline view lists them by status."""
+    if req.status not in ("contacted", "not_interested", "customer", "ignore"):
+        raise HTTPException(status_code=422, detail="invalid status")
+    async with get_conn() as conn:
+        exists = await conn.fetchval(
+            "SELECT 1 FROM nodes WHERE id = $1 AND valid_to IS NULL", str(node_id)
+        )
+        if not exists:
+            raise HTTPException(status_code=404, detail="node not found")
+        await conn.execute(
+            """
+            INSERT INTO lead_feedback (node_id, status, note, updated_at)
+            VALUES ($1, $2, $3, now())
+            ON CONFLICT (node_id) DO UPDATE SET
+                status = EXCLUDED.status, note = EXCLUDED.note, updated_at = now()
+            """,
+            str(node_id), req.status, req.note,
+        )
+    return {"node_id": str(node_id), "status": req.status}
+
+
+@app.delete("/leads/{node_id}/status")
+async def clear_lead_status(node_id: UUID) -> dict[str, Any]:
+    """Put an actor back into the lead pool."""
+    async with get_conn() as conn:
+        await conn.execute("DELETE FROM lead_feedback WHERE node_id = $1", str(node_id))
+    return {"node_id": str(node_id), "status": None}
+
+
+@app.get("/leads/pipeline")
+async def leads_pipeline(status: str | None = None) -> list[dict[str, Any]]:
+    """The worked-leads list (the pipeline), newest first."""
+    q = """
+        SELECT lf.node_id, lf.status, lf.note, lf.updated_at,
+               n.label, n.node_type, n.source, n.source_url, n.properties
+        FROM lead_feedback lf JOIN nodes n ON n.id = lf.node_id
+        {where}
+        ORDER BY lf.updated_at DESC
+        LIMIT 200
+    """
+    async with get_conn() as conn:
+        if status:
+            rows = await conn.fetch(q.format(where="WHERE lf.status = $1"), status)
+        else:
+            rows = await conn.fetch(q.format(where=""))
+    return [
+        {**dict(r), "node_id": str(r["node_id"]),
+         "updated_at": r["updated_at"].isoformat()}
+        for r in rows
+    ]
+
+
+# ── Förder-Radar (funding program matching) ──────────────────────────────────
+
+@app.post("/foerderung/match/{node_id}")
+async def foerderung_match(node_id: UUID) -> list[dict[str, Any]]:
+    """Judge the best-fitting funding programs for one actor. Persists
+    ELIGIBLE_FOR edges for positive verdicts; returns all verdicts."""
+    from reasoning.foerderung_match import match_programs
+
+    results = await match_programs(str(node_id))
+    if not results:
+        raise HTTPException(
+            status_code=404,
+            detail="Kein Akteur gefunden oder keine passenden Programme im Bestand.",
+        )
+    return results
