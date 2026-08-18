@@ -293,6 +293,52 @@ Regeln:
   Nachfrage ein und baue auf dem bisherigen Verlauf auf. Nenne genutzte Quellen.
 """
 
+SYNERGY_RESEARCH_SYSTEM = """\
+Du prüfst eine POTENZIELLE Synergie zwischen zwei realen Dortmunder Akteuren. Du
+hast dazu deren Graph-Fakten UND Auszüge ihrer Websites recherchiert. Entscheide
+EHRLICH und STRENG, ob eine Zusammenarbeit wirklich sinnvoll ist.
+
+Der ENTSCHEIDENDE Test — ZIELGRUPPE & ANLASS:
+- Würde DIESELBE Person beide Angebote plausibel im selben Zusammenhang nutzen,
+  oder will das Publikum des einen das andere wirklich? Nur dann ist es eine
+  Synergie.
+- Bloße räumliche NÄHE reicht NIEMALS. Zwei nahe, aber inhaltlich/stimmungsmäßig
+  unvereinbare Pläne sind KEINE Synergie.
+- Beispiel REJECT: Fitnessstudio (Workout) ↔ Jazzkonzert am Abend — völlig
+  unterschiedliches Publikum, Stimmung und Tagesplanung; niemand trainiert vor
+  einem Jazzabend. Ablehnen.
+- Beispiel MAKES_SENSE: Kunstausstellung ↔ Café nebenan — Besucher wollen nach dem
+  Rundgang einkehren; gemeinsame Laufkundschaft, gleicher Anlass.
+
+Weitere Reject-Gründe: ein Akteur inaktiv/geschlossen/kein echter Betrieb; Website
+passt nicht zum Akteur; ein Event ist bereits vorbei; die Akteure sind ohnehin
+schon verbunden; kein echter, umsetzbarer Mehrwert. Im Zweifel: reject.
+
+Ist sie sinnvoll (makes_sense): beschreibe KONKRET — die gemeinsame Zielgruppe/den
+Anlass, den Mechanismus, einen realistischen ersten Schritt, und Kontakt (nur aus
+den Fakten).
+Antworte NUR mit JSON:
+  {{"verdict":"makes_sense|reject","reason":"...","title":"...",
+    "description":"...","first_step":"...","contacts":["..."]}}
+Alle Textfelder auf Deutsch."""
+
+SYNERGY_RESEARCH_PROMPT = """\
+Aktuelles Datum: {today}.
+Warum diese beiden gepaart wurden: {note}
+
+── Akteur A ──
+{ctx_a}
+Website-Auszug A:
+{site_a}
+
+── Akteur B ──
+{ctx_b}
+Website-Auszug B:
+{site_b}
+
+Recherchiere und entscheide, ob die Synergie sinnvoll ist. Antworte als JSON.
+"""
+
 RESOURCE_TAG_SYSTEM = """\
 Du verschlagwortest eine Veranstaltung mit RESSOURCEN für komplementäre Synergien:
 was die Veranstaltung BRAUCHT (needs) und was sie selbst BIETET (offers).
